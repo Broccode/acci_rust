@@ -239,6 +239,68 @@ The security layer includes **authentication**, **authorization**, and **audit l
     }
     ```
 
+#### Supply Chain Security
+
+#### SBOM Management
+
+- **CycloneDX Generation**:
+  - Automatische SBOM-Generierung bei jedem Build
+  - Integration in CI/CD Pipeline
+  - Unterstützung für CycloneDX im JSON und XML Format
+  - Versionierung der SBOMs
+
+- **Dependency Scanning**:
+  - Kontinuierliche Überprüfung von Abhängigkeiten
+  - Integration mit OSV (Open Source Vulnerabilities) Database
+  - Automatische Benachrichtigung bei kritischen Schwachstellen
+  - Quarantäne für unsichere Abhängigkeiten
+
+- **Artifact Signing**:
+  - Signierung aller Build-Artefakte mit Sigstore/Cosign
+  - Verifizierung der Signaturen in der Deployment-Pipeline
+  - Schlüsselverwaltung für Build-Signaturen
+  - Attestierungen für Build-Prozesse
+
+#### Supply Chain Controls
+
+- **Build Integrity**:
+  - Reproduzierbare Builds mit `cargo vendor`
+  - Hash-Verifizierung von Abhängigkeiten
+  - Locked Dependencies über Cargo.lock
+  - Air-gapped Build-Umgebungen
+
+- **Dependency Management**:
+  - Strikte Versionierung über cargo-deny
+  - Whitelist für zugelassene Lizenzen
+  - Blacklist für bekannte unsichere Pakete
+  - Audit-Trail für Dependency-Updates
+
+- **Container Security**:
+  - Base Image Scanning
+  - Layer-Analyse für Container Images
+  - Minimale Container Images (distroless)
+  - Container Signing mit Cosign
+
+#### Compliance & Audit
+
+- **Documentation**:
+  - Vollständige SBOM-Dokumentation
+  - Lizenz-Compliance-Berichte
+  - Vulnerability Reports
+  - Audit-Logs für Supply Chain Events
+
+- **Monitoring**:
+  - Kontinuierliche Überwachung der Supply Chain
+  - Metriken für Dependency-Updates
+  - Alert-System für Security Issues
+  - Performance-Impact-Analyse
+
+- **Reporting**:
+  - Automatische SBOM-Aktualisierung
+  - Compliance-Berichte
+  - Security-Scoring
+  - Risk Assessment Reports
+
 ---
 
 ## CQRS Architecture
@@ -366,6 +428,16 @@ The internationalization section includes **translation system**, **message cate
   - Store translations in `i18n/{lang}/` directories
 - **Fallback Language**:
   - Fall back to English if a translation is missing
+
+---
+
+### CI/CD Practices
+
+- **Supply Chain Security**:
+  - SBOM-Generierung in jedem Build
+  - Dependency-Scanning vor Deployment
+  - Artifact-Signing nach erfolgreichen Tests
+  - Verifizierung aller externen Abhängigkeiten
 
 ---
 
