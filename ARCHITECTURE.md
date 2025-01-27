@@ -205,10 +205,79 @@ src/
    ```
 
 5. **Security Tests**
-   - Penetrationstests
-   - SAST/DAST Integration
-   - Dependency Scanning
-   - SBOM Validierung
+    - Penetrationstests
+    - SAST/DAST Integration
+    - Dependency Scanning
+    - SBOM Validierung
+
+6. **Container-Based Tests**
+    - Integration mit Testcontainers
+    - Realistische Testumgebungen
+    - Isolierte Tests
+    ```rust
+    #[tokio::test]
+    async fn test_with_postgres() {
+        let container = PostgresContainer::new()
+            .with_version("15-alpine")
+            .with_database("test_db")
+            .with_credentials("test_user", "test_pass");
+            
+        let node = container.start().await?;
+        let db = PgPool::connect(&node.connection_string).await?;
+        
+        // Test mit echter Postgres-Instanz
+        let result = perform_database_operation(&db).await?;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_with_kafka() {
+        let kafka = KafkaContainer::new()
+            .with_version("3.5")
+            .with_topic("test_events");
+            
+        let node = kafka.start().await?;
+        
+        // Test mit echter Kafka-Instanz
+        let producer = create_producer(&node.bootstrap_servers).await?;
+        let result = send_event(&producer, "test_event").await?;
+        assert!(result.is_ok());
+    }
+    ```
+
+    #### Vorteile der Testcontainers
+    - Realistische Testumgebung
+    - Reproduzierbare Tests
+    - Isolation zwischen Tests
+    - Automatisches Cleanup
+    - CI/CD-Integration
+    
+    #### Unterstützte Container
+    - PostgreSQL für Datenbank-Tests
+    - Kafka für Event-Streaming-Tests
+    - Redis für Caching-Tests
+    - MinIO für S3-kompatible Storage-Tests
+    - Elasticsearch für Suchdienst-Tests
+    
+    #### Best Practices
+    - Container-Ressourcen begrenzen
+    - Parallele Ausführung optimieren
+    - Wiederverwendung von Container-Instanzen
+    - Health-Checks implementieren
+    ```rust
+    impl PostgresContainer {
+        async fn wait_until_ready(&self) -> Result<()> {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while Instant::now() < deadline {
+                if self.check_connection().await.is_ok() {
+                    return Ok(());
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Err(Error::Timeout)
+        }
+    }
+    ```
 
 #### Test-Infrastruktur
 - **CI/CD Integration**
