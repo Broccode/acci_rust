@@ -151,9 +151,9 @@ src/
 
 #### Test Types
 1. **Unit Tests**
-   - Test einzelner Komponenten
-   - Mocking externer Abhängigkeiten
-   - Hohe Testabdeckung (>90%)
+   - Testing individual components
+   - Mocking external dependencies
+   - High test coverage (>90%)
    ```rust
    #[cfg(test)]
    mod tests {
@@ -166,9 +166,9 @@ src/
    ```
 
 2. **Integration Tests**
-   - API-Endpunkt-Tests
-   - Datenbank-Integration
-   - Service-Interaktionen
+   - API endpoint testing
+   - Database integration
+   - Service interactions
    ```rust
    #[tokio::test]
    async fn test_api_endpoint() {
@@ -181,8 +181,8 @@ src/
    ```
 
 3. **Property-Based Tests**
-   - Automatisierte Testfallgenerierung
-   - Grenzfälle und Randbedingungen
+   - Automated test case generation
+   - Edge cases and boundary conditions
    ```rust
    #[test]
    fn property_test() {
@@ -194,9 +194,9 @@ src/
    ```
 
 4. **Performance Tests**
-   - Benchmark-Tests mit criterion.rs
-   - Lasttests für API-Endpunkte
-   - Speicherverbrauch-Monitoring
+   - Benchmark tests with criterion.rs
+   - Load testing for API endpoints
+   - Memory usage monitoring
    ```rust
    #[bench]
    fn bench_operation(b: &mut Bencher) {
@@ -205,15 +205,15 @@ src/
    ```
 
 5. **Security Tests**
-    - Penetrationstests
-    - SAST/DAST Integration
-    - Dependency Scanning
-    - SBOM Validierung
+    - Penetration testing
+    - SAST/DAST integration
+    - Dependency scanning
+    - SBOM validation
 
 6. **Container-Based Tests**
-    - Integration mit Testcontainers
-    - Realistische Testumgebungen
-    - Isolierte Tests
+    - Integration with Testcontainers
+    - Realistic test environments
+    - Isolated testing
     ```rust
     #[tokio::test]
     async fn test_with_postgres() {
@@ -225,7 +225,7 @@ src/
         let node = container.start().await?;
         let db = PgPool::connect(&node.connection_string).await?;
         
-        // Test mit echter Postgres-Instanz
+        // Test with real Postgres instance
         let result = perform_database_operation(&db).await?;
         assert!(result.is_ok());
     }
@@ -238,32 +238,32 @@ src/
             
         let node = kafka.start().await?;
         
-        // Test mit echter Kafka-Instanz
+        // Test with real Kafka instance
         let producer = create_producer(&node.bootstrap_servers).await?;
         let result = send_event(&producer, "test_event").await?;
         assert!(result.is_ok());
     }
     ```
 
-    #### Vorteile der Testcontainers
-    - Realistische Testumgebung
-    - Reproduzierbare Tests
-    - Isolation zwischen Tests
-    - Automatisches Cleanup
-    - CI/CD-Integration
+    #### Advantages of Testcontainers
+    - Realistic test environment
+    - Reproducible tests
+    - Isolation between tests
+    - Automatic cleanup
+    - CI/CD integration
     
-    #### Unterstützte Container
-    - PostgreSQL für Datenbank-Tests
-    - Kafka für Event-Streaming-Tests
-    - Redis für Caching-Tests
-    - MinIO für S3-kompatible Storage-Tests
-    - Elasticsearch für Suchdienst-Tests
+    #### Supported Containers
+    - PostgreSQL for database tests
+    - Kafka for event streaming tests
+    - Redis for caching tests
+    - MinIO for S3-compatible storage tests
+    - Elasticsearch for search service tests
     
     #### Best Practices
-    - Container-Ressourcen begrenzen
-    - Parallele Ausführung optimieren
-    - Wiederverwendung von Container-Instanzen
-    - Health-Checks implementieren
+    - Limit container resources
+    - Optimize parallel execution
+    - Reuse container instances
+    - Implement health checks
     ```rust
     impl PostgresContainer {
         async fn wait_until_ready(&self) -> Result<()> {
@@ -279,7 +279,7 @@ src/
     }
     ```
 
-#### Test-Infrastruktur
+#### Test Infrastructure
 - **CI/CD Integration**
   ```yaml
   test:
@@ -307,15 +307,15 @@ src/
   - Staging
   - Production-like
 
-#### Testabdeckung
+#### Test Coverage
 - **Code Coverage**
-  - Minimum 90% für kritische Pfade
-  - Coverage-Reports in CI/CD
-  - Branch Coverage Tracking
+  - Minimum 90% for critical paths
+  - Coverage reports in CI/CD
+  - Branch coverage tracking
 
 - **Mutation Testing**
-  - Qualität der Tests sicherstellen
-  - Automatische Mutation Detection
+  - Ensure test quality
+  - Automatic mutation detection
 
 #### I18N Testing
 - **Translation Coverage**
@@ -330,25 +330,25 @@ src/
   ```
 
 - **UI/UX Tests**
-  - RTL/LTR Layout Tests
-  - Lokalisierte Inhalte
-  - Zeichensatz-Kompatibilität
+  - RTL/LTR layout tests
+  - Localized content
+  - Character set compatibility
 
 #### Best Practices
-1. **Test-Organisation**
-   - Tests neben Produktionscode
-   - Beschreibende Testnamen
-   - Shared Test Utilities
+1. **Test Organization**
+   - Tests alongside production code
+   - Descriptive test names
+   - Shared test utilities
 
-2. **Test-Wartung**
-   - Regelmäßige Test-Reviews
-   - Flaky Test Detection
-   - Test-Dokumentation
+2. **Test Maintenance**
+   - Regular test reviews
+   - Flaky test detection
+   - Test documentation
 
 3. **Continuous Testing**
-   - Pre-commit Hooks
-   - Automatisierte Test Suites
-   - Test Result Monitoring
+   - Pre-commit hooks
+   - Automated test suites
+   - Test result monitoring
 
 ### Best Practices
 1. **Code Quality**
