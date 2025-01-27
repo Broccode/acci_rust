@@ -41,7 +41,285 @@ doc/
 
 ## Technical Stack
 
-### 1. API Layer
+### Core Technologies
+```rust
+pub struct TechnicalStack {
+    // Core
+    language: String,        // Rust (stable)
+    web_framework: String,   // Axum
+    ui_framework: String,    // Leptos
+    
+    // Database
+    primary_db: String,      // PostgreSQL 15+
+    cache: String,          // Redis 7+
+    search: String,         // Elasticsearch 8+
+    
+    // Infrastructure
+    container: String,      // Docker
+    orchestration: String,  // Kubernetes
+    ci_cd: String,         // GitHub Actions
+}
+```
+
+### Framework Dependencies
+```toml
+[dependencies]
+# Core
+axum = "0.7"
+leptos = "0.6"
+tokio = { version = "1.36", features = ["full"] }
+tower = "0.4"
+
+# Database
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls"] }
+redis = { version = "0.24", features = ["tokio-comp"] }
+
+# Security
+ring = "0.17"
+rustls = "0.22"
+jsonwebtoken = "9.2"
+
+# Observability
+tracing = "0.1"
+prometheus = "0.13"
+opentelemetry = { version = "0.21", features = ["rt-tokio"] }
+```
+
+### Development Tools
+```rust
+pub struct DevelopmentStack {
+    // Build & Package Management
+    build_system: String,    // Cargo
+    dependency_manager: String, // Cargo + cargo-edit
+    
+    // Quality & Security
+    linter: String,         // Clippy
+    formatter: String,      // rustfmt
+    security_audit: String, // cargo-audit + cargo-deny
+    
+    // Testing
+    test_framework: String, // built-in + tokio-test
+    benchmark: String,      // criterion
+    coverage: String,       // cargo-tarpaulin
+}
+```
+
+### 1. Application Architecture
+#### Modular Monolith Structure
+- Domain-driven module boundaries
+- Clear interface contracts between modules
+- Shared kernel for common functionality
+- Internal message bus for module communication
+```rust
+#[derive(Debug)]
+struct ModuleDefinition {
+    name: String,
+    version: String,
+    dependencies: Vec<ModuleDependency>,
+    public_interface: PublicAPI,
+    internal_events: Vec<EventDefinition>,
+}
+
+#[derive(Debug)]
+struct ModuleDependency {
+    module: String,
+    interface: InterfaceVersion,
+    access_type: AccessType, // Direct, EventBased, SharedKernel
+}
+```
+
+#### Module Communication
+- In-memory event bus
+- Strict module boundaries
+- Compile-time dependency validation
+- Transaction scope management
+```rust
+#[derive(Debug)]
+struct EventBus {
+    subscribers: HashMap<EventType, Vec<ModuleSubscriber>>,
+    transaction_manager: TransactionManager,
+    event_validation: EventValidator,
+}
+```
+
+#### Module Organization
+```
+src/
+├── modules/
+│   ├── identity/      # Identity & Access Management
+│   │   ├── providers/     # Identity Provider Implementations
+│   │   ├── federation/    # Enterprise Identity Federation
+│   │   ├── mfa/          # Multi-Factor Authentication
+│   │   ├── directory/    # Directory Service Integration
+│   │   ├── events.rs     # Identity Event Definitions
+│   │   ├── metrics.rs    # Identity-specific Metrics
+│   │   └── i18n.rs       # Internationalization
+│   ├── billing/       # Payment & subscription
+│   ├── reporting/     # Analytics & reports
+│   └── audit/         # Audit logging
+├── shared/            # Shared kernel
+└── core/              # Core framework
+```
+
+#### Shared Kernel
+- Common data types
+- Cross-cutting concerns
+- Utility functions
+- Core traits
+```rust
+mod shared_kernel {
+    pub mod types {
+        pub struct TenantId(Uuid);
+        pub struct UserId(Uuid);
+    }
+    
+    pub mod traits {
+        pub trait TenantScoped {
+            fn tenant_id(&self) -> TenantId;
+        }
+    }
+}
+```
+
+#### Error Handling Strategy
+
+##### Error Types
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum ApplicationError {
+    #[error("Authentication failed: {0}")]
+    AuthenticationError(String),
+    
+    #[error("Authorization failed: {0}")]
+    AuthorizationError(String),
+    
+    #[error("Validation failed: {0}")]
+    ValidationError(String),
+    
+    #[error("Database error: {0}")]
+    DatabaseError(#[from] sqlx::Error),
+    
+    #[error("External service error: {0}")]
+    ExternalServiceError(String),
+    
+    #[error("Rate limit exceeded")]
+    RateLimitError,
+}
+```
+
+##### Error Handling Principles
+1. **Error Propagation**
+   - Use `?` operator for error propagation
+   - Convert errors at boundary layers
+   - Maintain error context
+
+2. **Error Recovery**
+   - Implement retry mechanisms
+   - Circuit breaker patterns
+   - Graceful degradation
+
+3. **Error Reporting**
+   - Structured error logging
+   - Error metrics collection
+   - Error correlation
+
+##### API Error Responses
+```rust
+#[derive(Debug, Serialize)]
+pub struct ApiErrorResponse {
+    code: String,
+    message: String,
+    details: Option<Value>,
+    correlation_id: Uuid,
+    timestamp: DateTime<Utc>,
+}
+
+impl ApiErrorResponse {
+    pub fn new(error: &ApplicationError, correlation_id: Uuid) -> Self {
+        // Convert internal error to API response
+        Self {
+            code: error.code(),
+            message: error.to_string(),
+            details: error.details(),
+            correlation_id,
+            timestamp: Utc::now(),
+        }
+    }
+}
+```
+
+### API Documentation & Versioning
+
+#### API Versioning Strategy
+```rust
+pub struct ApiVersion {
+    major: u8,
+    minor: u8,
+    path: String,           // /api/v{major}/{path}
+    deprecation_date: Option<DateTime<Utc>>,
+    sunset_date: Option<DateTime<Utc>>,
+}
+
+impl ApiVersion {
+    pub fn is_deprecated(&self) -> bool {
+        self.deprecation_date
+            .map(|date| Utc::now() > date)
+            .unwrap_or(false)
+    }
+}
+```
+
+#### OpenAPI Documentation
+```rust
+pub struct ApiDocumentation {
+    version: ApiVersion,
+    openapi_spec: OpenApiSpec,
+    supported_languages: Vec<String>, // ["en", "de", "sq"]
+    examples: HashMap<String, Value>,
+}
+
+// Example endpoint documentation
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "Login successful", body = AuthToken),
+        (status = 401, description = "Authentication failed", body = ApiErrorResponse),
+        (status = 429, description = "Too many requests", body = ApiErrorResponse)
+    ),
+    security(
+        ("api_key" = [])
+    )
+)]
+async fn login(
+    Json(request): Json<LoginRequest>,
+) -> Result<Json<AuthToken>, ApiErrorResponse> {
+    // Implementation
+}
+```
+
+#### API Change Management
+1. **Version Lifecycle**
+   - Alpha: Internal testing
+   - Beta: Early adopter access
+   - GA: General availability
+   - Deprecated: End-of-life announced
+   - Sunset: Version removed
+
+2. **Breaking Changes**
+   - Major version bump required
+   - Migration guide mandatory
+   - Minimum 6 months notice
+   - Automated migration tools
+
+3. **Documentation Requirements**
+   - OpenAPI/Swagger specs
+   - Postman collections
+   - Code examples
+   - Migration guides
+
+### 2. API Layer
 #### REST API
 - Accept-Language header based localization
 - Standardized error responses
@@ -65,7 +343,7 @@ query GetUser($userId: ID!, $locale: String!) {
 }
 ```
 
-### 2. Database Architecture
+### 3. Database Architecture
 #### Event Sourcing
 - PostgreSQL/Kafka for event storage
 - Language-agnostic event payloads
@@ -84,7 +362,120 @@ struct UserRegisteredEvent {
 - PostgreSQL RLS for tenant isolation
 - Automated tenant lifecycle management
 
-### 3. Security Architecture
+#### Schema Management
+```rust
+pub struct DatabaseSchema {
+    version: SchemaVersion,
+    migrations: Vec<Migration>,
+    tenancy_model: TenancyModel,
+    audit_enabled: bool,
+}
+
+#[derive(Debug)]
+pub enum TenancyModel {
+    SchemaPerTenant,    // Separate schema for each tenant
+    SharedSchema {      // Shared schema with tenant_id column
+        row_level_security: bool,
+    },
+}
+```
+
+#### Migration System
+```rust
+pub struct Migration {
+    version: i64,
+    name: String,
+    up_sql: String,
+    down_sql: String,
+    checksum: String,
+    applied_at: Option<DateTime<Utc>>,
+}
+
+impl Migration {
+    async fn apply(&self, tx: &mut Transaction<'_, Postgres>) -> Result<()> {
+        // Apply migration in transaction
+        tx.execute(&self.up_sql, &[]).await?;
+        
+        // Update migration history
+        tx.execute(
+            "INSERT INTO _migrations (version, name, checksum, applied_at) VALUES ($1, $2, $3, $4)",
+            &[&self.version, &self.name, &self.checksum, &Utc::now()],
+        ).await?;
+        
+        Ok(())
+    }
+}
+```
+
+#### Schema Examples
+
+1. **Tenant Management**
+```sql
+CREATE TABLE tenants (
+    id UUID PRIMARY KEY,
+    name TEXT NOT NULL,
+    schema_name TEXT UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- For shared schema approach
+ALTER TABLE users 
+ADD COLUMN tenant_id UUID NOT NULL REFERENCES tenants(id);
+
+-- Enable RLS
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON users 
+    USING (tenant_id = current_setting('app.current_tenant')::UUID);
+```
+
+2. **User Management**
+```sql
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    last_login TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE user_sessions (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id),
+    token_hash TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+#### Backup & Recovery
+```rust
+pub struct BackupConfig {
+    schedule: String,        // Cron expression
+    retention_days: u32,
+    encryption_key: String,
+    storage_location: String,
+}
+
+impl BackupConfig {
+    async fn create_backup(&self) -> Result<BackupMetadata> {
+        // 1. Create consistent snapshot
+        // 2. Encrypt backup
+        // 3. Upload to storage
+        // 4. Update backup history
+    }
+    
+    async fn restore_backup(&self, backup_id: Uuid) -> Result<()> {
+        // 1. Download backup
+        // 2. Verify integrity
+        // 3. Decrypt backup
+        // 4. Restore database
+    }
+}
+```
+
+### 4. Security Architecture
 
 #### Authentication & Authorization
 - Tenant-aware authentication
@@ -102,7 +493,7 @@ struct UserRegisteredEvent {
 - Air-gapped environments
 - Dependency locking
 
-### 4. Observability Stack
+### 5. Observability Stack
 
 #### Logging
 - Structured JSON logging
@@ -128,12 +519,49 @@ struct UserRegisteredEvent {
 - Distroless base images
 - Health checks
 - Graceful shutdown
+- Resource limits and requests
+```rust
+#[derive(Debug)]
+struct ContainerConfig {
+    image: String,
+    resource_limits: ResourceLimits,
+    health_check: HealthCheck,
+    security_context: SecurityContext,
+}
+```
 
 #### CI/CD Pipeline
-- Automated testing
-- SBOM verification
-- Security scanning
+- Automated testing (unit, integration, e2e)
+- SBOM verification and security scanning
 - Multi-arch builds
+- Deployment strategies
+```yaml
+pipeline:
+  stages:
+    - test
+    - security_scan
+    - build
+    - deploy
+
+  test:
+    unit_tests:
+      - cargo test --all-features
+    integration_tests:
+      - cargo test --test '*'
+    e2e_tests:
+      - ./e2e/run_tests.sh
+
+  security:
+    - cargo audit
+    - cargo deny check
+    - cyclonedx-bom
+    
+  build:
+    - docker buildx build --platform linux/amd64,linux/ppc64le
+    
+  deploy:
+    - helm upgrade --install
+```
 
 #### Infrastructure as Code
 - Terraform modules
@@ -332,6 +760,44 @@ struct BatchJob {
 - SBOM verification
 - Security scanning
 - Multi-arch builds
+
+### 11. Development Workflow
+
+#### Local Development
+- Development environment setup
+- Hot reloading
+- Debug configurations
+- Local service dependencies
+```rust
+#[derive(Debug)]
+struct DevEnvironment {
+    hot_reload: bool,
+    debug_port: u16,
+    local_services: Vec<LocalService>,
+    mock_config: MockConfig,
+}
+```
+
+#### Code Review Process
+- PR templates
+- Review guidelines
+- Automated checks
+- Documentation requirements
+
+#### Quality Gates
+- Code coverage thresholds
+- Performance benchmarks
+- Security scanning
+- Dependency validation
+```rust
+#[derive(Debug)]
+struct QualityGate {
+    min_coverage: f32,
+    max_cyclomatic_complexity: u32,
+    performance_thresholds: PerformanceThresholds,
+    security_requirements: SecurityRequirements,
+}
+```
 
 ## Development Guidelines
 
@@ -594,3 +1060,68 @@ src/
 ---
 
 🔍 For more details on specific components, refer to their respective documentation in the `doc/` directory.
+
+### Identity Management
+
+#### Core Features
+```rust
+pub struct IdentityModule {
+    providers: Vec<Box<dyn IdentityProvider>>,
+    event_bus: EventBus<IdentityEvent>,
+    metrics: IdentityMetrics,
+    i18n: IdentityI18N,
+    audit: AuditLogger,
+}
+```
+
+#### Supported Authentication Methods
+- Password-based authentication
+- Multi-factor authentication (TOTP, WebAuthn)
+- Enterprise SSO (SAML, OIDC)
+- Directory services integration
+
+#### Security Features
+- Tenant isolation
+- Role-based access control
+- Just-in-time provisioning
+- Session management
+- Audit logging
+
+#### Observability
+```rust
+// Identity-specific metrics
+pub struct IdentityMetrics {
+    auth_requests_total: Counter,
+    auth_latency: Histogram,
+    auth_errors_total: Counter,
+    active_sessions: Gauge,
+    mfa_usage_ratio: Gauge,
+}
+```
+
+#### Internationalization
+- Error messages in all supported languages
+- Localized notifications
+- RTL/LTR support for UI elements
+- Timezone-aware datetime handling
+
+#### Testing Strategy
+```rust
+#[cfg(test)]
+mod identity_tests {
+    #[test]
+    fn test_identity_provider_integration() {
+        // Identity Provider specific tests
+    }
+    
+    #[test]
+    fn test_multi_tenant_isolation() {
+        // Tenant isolation tests
+    }
+    
+    #[test]
+    fn test_i18n_completeness() {
+        // Translation coverage tests
+    }
+}
+```
