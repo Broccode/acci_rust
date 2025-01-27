@@ -135,6 +135,204 @@ struct UserRegisteredEvent {
 - Security scanning
 - Multi-arch builds
 
+#### Infrastructure as Code
+- Terraform modules
+- Kubernetes manifests
+- Helm charts
+- Example:
+```rust
+#[derive(Deserialize)]
+struct InfrastructureConfig {
+    kubernetes_version: String,
+    node_pools: Vec<NodePool>,
+    monitoring_enabled: bool,
+    backup_retention_days: u32,
+}
+```
+
+#### Cloud Provider Integration
+- Multi-cloud support
+- Cloud-agnostic abstractions
+- Resource provisioning
+- Cost optimization
+
+#### Network Architecture
+- Service mesh integration
+- Load balancing
+- Traffic management
+- Network policies
+
+#### Scalability
+- Horizontal pod autoscaling
+- Vertical pod autoscaling
+- Cluster autoscaling
+- Example:
+```rust
+#[derive(Debug)]
+struct AutoscalingPolicy {
+    min_replicas: u32,
+    max_replicas: u32,
+    target_cpu_utilization: u32,
+    scale_down_delay: Duration,
+}
+```
+
+### 6. Disaster Recovery & Business Continuity
+
+#### Backup Strategy
+- Automated backup procedures
+- Multi-region data replication
+- Point-in-time recovery
+- Regular backup testing
+
+#### Recovery Objectives
+- RTO (Recovery Time Objective) monitoring
+- RPO (Recovery Point Objective) compliance
+- Business impact analysis
+- Recovery prioritization
+
+#### Failover Mechanisms
+```rust
+#[derive(Debug)]
+struct FailoverConfig {
+    rto_minutes: u32,
+    rpo_minutes: u32,
+    auto_failover: bool,
+    regions: Vec<Region>,
+}
+```
+
+### 7. Compliance & Governance
+
+#### Audit System
+- Comprehensive audit logging
+- Tamper-proof audit trails
+- Audit log retention
+- Example:
+```rust
+#[derive(Serialize)]
+struct AuditEvent {
+    timestamp: DateTime<Utc>,
+    actor: UserId,
+    tenant_id: TenantId,
+    action: String,
+    resource: String,
+    context: HashMap<String, Value>,
+}
+```
+
+#### Compliance Framework
+- GDPR compliance
+- SOX requirements
+- ISO 27001 controls
+- Regulatory reporting
+
+#### Data Governance
+- Data classification
+- Retention policies
+- Privacy controls
+- Data sovereignty
+
+### 8. Advanced Security Features
+
+#### Identity & Access
+- Identity Federation
+- Single Sign-On (SSO)
+- Multi-Factor Authentication
+- Example:
+```rust
+#[derive(Debug)]
+struct SecurityConfig {
+    sso_providers: Vec<SSOProvider>,
+    mfa_required: bool,
+    session_timeout: Duration,
+    password_policy: PasswordPolicy,
+}
+```
+
+#### Zero Trust Architecture
+- Identity-based security
+- Least privilege access
+- Network segmentation
+- Continuous verification
+
+#### Security Monitoring
+- SIEM integration
+- Threat detection
+- Security analytics
+- Incident response
+
+### 9. Configuration Management
+
+#### Feature Management
+- Feature flags
+- A/B testing support
+- Gradual rollouts
+- Example:
+```rust
+#[derive(Serialize, Deserialize)]
+struct FeatureFlag {
+    name: String,
+    enabled: bool,
+    rollout_percentage: u8,
+    conditions: HashMap<String, String>,
+}
+```
+
+#### Environment Configuration
+- Environment-specific settings
+- Secret management
+- Configuration validation
+- Dynamic updates
+
+#### Version Control
+- Configuration versioning
+- Change tracking
+- Rollback capability
+- Audit trail
+
+### 10. Batch Processing
+
+#### Job Management
+- Scheduled job execution
+- Job dependencies
+- Resource allocation
+- Example:
+```rust
+#[derive(Debug)]
+struct BatchJob {
+    id: JobId,
+    schedule: String, // Cron expression
+    max_retries: u32,
+    timeout: Duration,
+    resources: ResourceRequirements,
+}
+```
+
+#### Processing Pipeline
+- Parallel processing
+- Error handling
+- Progress tracking
+- Resource monitoring
+
+#### Retry Mechanism
+- Exponential backoff
+- Dead letter queues
+- Failure notifications
+- Recovery procedures
+
+#### Container Architecture
+- Multi-arch support (amd64, ppc64le)
+- Distroless base images
+- Health checks
+- Graceful shutdown
+
+#### CI/CD Pipeline
+- Automated testing
+- SBOM verification
+- Security scanning
+- Multi-arch builds
+
 ## Development Guidelines
 
 ### Code Organization
