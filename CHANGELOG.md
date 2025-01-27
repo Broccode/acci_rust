@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Testcontainers Support in der Architektur für realistische Integrationstest-Umgebungen
+  - PostgreSQL Container für Datenbank-Tests
+  - Kafka Container für Event-Streaming-Tests
+  - Redis Container für Caching-Tests
+  - MinIO Container für S3-Storage-Tests
+  - Elasticsearch Container für Such-Tests
+
 # Version Numbering
 
 This project uses a three-number versioning system (X.Y.Z):
@@ -113,4 +123,3 @@ Commit and Tag:
 Commit all changes with message "release: Version X.Y.Z"
 
 Create a git tag for the version (e.g., v0.2.0)
-
