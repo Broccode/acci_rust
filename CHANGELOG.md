@@ -14,4 +14,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic server setup with CORS and health check endpoint
 - Tenant isolation through Row Level Security
 - Authentication service structure with password hashing
+- Tenant management API with CRUD operations
 - Database migrations system with initial schema

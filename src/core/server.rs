@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use axum::{
     Router,
-    routing::get,
+    routing::{get, post, put},
     response::IntoResponse,
     http::{StatusCode, HeaderValue},
 };
@@ -11,36 +11,49 @@ use tower_http::{
 };
 use tracing::info;
 
-use crate::core::config::ServerConfig;
-use crate::shared::error::Result;
+use crate::core::{
+    config::ServerConfig,
+    database::Database,
+};
+use crate::shared::error::{Error, Result};
+use crate::modules::tenant::{
+    handlers as tenant_handlers,
+    create_tenant_module,
+    TenantModule,
+};
 
 /// Represents the HTTP server
 #[derive(Debug)]
 pub struct Server {
     config: ServerConfig,
+    tenant_module: TenantModule,
 }
 
 impl Server {
     /// Creates a new server instance
-    pub fn new(config: &ServerConfig) -> Self {
-        Self {
+    pub async fn new(config: &ServerConfig) -> Result<Self> {
+        let db = Database::connect(&config.database).await?;
+        let tenant_module = create_tenant_module(db).await?;
+        Ok(Self {
             config: config.clone(),
-        }
+            tenant_module,
+        })
     }
 
     /// Starts the HTTP server
     pub async fn run(self) -> Result<()> {
         let app = self.create_router();
 
-        let addr = SocketAddr::from(([0, 0, 0, 0], self.config.port));
+        let addr = format!("{}:{}", self.config.server.host, self.config.server.port).parse()
+            .map_err(|e| Error::Internal(format!("Invalid address: {}", e)))?;
         info!("Starting server on {}", addr);
 
         let listener = tokio::net::TcpListener::bind(addr).await
-            .map_err(|e| crate::shared::error::Error::Internal(e.to_string()))?;
+            .map_err(|e| Error::Internal(e.to_string()))?;
 
         axum::serve(listener, app)
             .await
-            .map_err(|e| crate::shared::error::Error::Internal(e.to_string()))?;
+            .map_err(|e| Error::Internal(e.to_string()))?;
 
         Ok(())
     }
@@ -48,13 +61,20 @@ impl Server {
     /// Creates the application router with all routes
     fn create_router(&self) -> Router {
         // Convert allowed origins to HeaderValues
-        let allowed_origins = self.config.cors_allowed_origins
+        let allowed_origins = self.config.server.cors_allowed_origins
             .iter()
             .filter_map(|origin| HeaderValue::from_str(origin).ok())
             .collect::<Vec<HeaderValue>>();
 
         Router::new()
             .route("/health", get(health_check))
+            // Tenant routes
+            .route("/api/v1/tenants", post(tenant_handlers::create_tenant))
+            .route("/api/v1/tenants", get(tenant_handlers::list_tenants))
+            .route("/api/v1/tenants/:id", get(tenant_handlers::get_tenant))
+            .route("/api/v1/tenants/:id", put(tenant_handlers::update_tenant))
+            .with_state(self.tenant_module.clone())
+            // CORS and tracing layers
             .layer(TraceLayer::new_for_http())
             .layer(
                 CorsLayer::new()
@@ -87,13 +107,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_check() {
-        let config = ServerConfig {
-            host: "127.0.0.1".to_string(),
-            port: 3000,
-            cors_allowed_origins: vec!["http://localhost:3000".to_string()],
-        };
-
-        let server = Server::new(&config);
+        let config = ServerConfig::default_dev();
+        let server = Server::new(&config).await.unwrap();
         let app = server.create_router();
 
         let response = app

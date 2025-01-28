@@ -1,8 +1,10 @@
+use tracing::info;
+
+use crate::core::{config::ServerConfig, server::Server};
+
 mod core;
 mod modules;
 mod shared;
-
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -15,11 +17,14 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("Starting ACCI Framework...");
+    info!("Starting ACCI Framework...");
 
-    // TODO: Initialize database connection
-    // TODO: Setup and run web server
-    // TODO: Initialize tenant management
+    // Load configuration
+    let config = ServerConfig::default_dev();
+
+    // Create and run server
+    let server = Server::new(&config).await?;
+    server.run().await?;
 
     Ok(())
 }

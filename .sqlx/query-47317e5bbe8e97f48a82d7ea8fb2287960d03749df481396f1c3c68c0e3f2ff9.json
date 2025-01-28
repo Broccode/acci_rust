@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "RESET app.current_tenant",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "47317e5bbe8e97f48a82d7ea8fb2287960d03749df481396f1c3c68c0e3f2ff9"
+}

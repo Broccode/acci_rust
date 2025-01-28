@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT r.id, r.name,\n                   array_agg(p.id) as permission_ids,\n                   array_agg(p.name) as permission_names,\n                   array_agg(p.resource) as permission_resources,\n                   array_agg(p.action) as permission_actions\n            FROM roles r\n            LEFT JOIN role_permissions rp ON r.id = rp.role_id\n            LEFT JOIN permissions p ON rp.permission_id = p.id\n            WHERE r.id = ANY($1)\n            GROUP BY r.id, r.name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "permission_ids",
+        "type_info": "UuidArray"
+      },
+      {
+        "ordinal": 3,
+        "name": "permission_names",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 4,
+        "name": "permission_resources",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 5,
+        "name": "permission_actions",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "621db1e0d81b4899e5ce2d041d03cc012c4c0c4e7d9cac53b367e5a13f36335a"
+}

@@ -12,9 +12,9 @@ pub struct DatabaseConfig {
     pub ssl_mode: bool,
 }
 
-/// Server configuration
+/// Server settings
 #[derive(Debug, Clone, Deserialize)]
-pub struct ServerConfig {
+pub struct ServerSettings {
     pub host: String,
     pub port: u16,
     pub cors_allowed_origins: Vec<String>,
@@ -22,17 +22,15 @@ pub struct ServerConfig {
 
 /// Main configuration structure
 #[derive(Debug, Clone, Deserialize)]
-pub struct Config {
+pub struct ServerConfig {
     pub database: DatabaseConfig,
-    pub server: ServerConfig,
+    pub server: ServerSettings,
 }
 
-impl Config {
-    /// Creates a new configuration instance from environment variables
-    pub fn from_env() -> crate::shared::error::Result<Self> {
-        // TODO: Implement environment variable loading
-        // For now, return development defaults
-        Ok(Self {
+impl ServerConfig {
+    /// Creates a default configuration for development
+    pub fn default_dev() -> Self {
+        Self {
             database: DatabaseConfig {
                 host: "localhost".to_string(),
                 port: 5432,
@@ -42,11 +40,11 @@ impl Config {
                 max_connections: 5,
                 ssl_mode: false,
             },
-            server: ServerConfig {
+            server: ServerSettings {
                 host: "127.0.0.1".to_string(),
                 port: 3000,
                 cors_allowed_origins: vec!["http://localhost:3000".to_string()],
             },
-        })
+        }
     }
 }

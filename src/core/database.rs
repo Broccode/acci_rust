@@ -2,12 +2,26 @@ use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tracing::info;
 
 use crate::core::config::DatabaseConfig;
-use crate::shared::{error::Result, types::TenantId};
+use crate::shared::{
+    error::{Error, Result},
+    types::TenantId,
+    traits::TenantAware,
+};
 
 /// Represents a database connection pool
 #[derive(Debug, Clone)]
 pub struct Database {
     pool: Pool<Postgres>,
+}
+
+impl Default for Database {
+    fn default() -> Self {
+        Self {
+            pool: PgPoolOptions::new()
+                .max_connections(5)
+                .connect_lazy("postgres://localhost/acci_rust").unwrap(),
+        }
+    }
 }
 
 impl Database {
@@ -39,25 +53,6 @@ impl Database {
     async fn initialize_database(pool: &Pool<Postgres>) -> Result<()> {
         // Create extension for UUID support if not exists
         sqlx::query!("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
-            .execute(pool)
-            .await?;
-
-        // Create tenants table if not exists
-        sqlx::query!(
-            r#"
-            CREATE TABLE IF NOT EXISTS tenants (
-                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                name TEXT NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-            "#
-        )
-        .execute(pool)
-        .await?;
-
-        // Enable RLS on tenants table
-        sqlx::query!("ALTER TABLE tenants ENABLE ROW LEVEL SECURITY")
             .execute(pool)
             .await?;
 
@@ -117,6 +112,6 @@ mod tests {
             .await
             .unwrap();
             
-        assert_eq!(result.one, 1);
+        assert_eq!(result.one, Some(1));
     }
 }
