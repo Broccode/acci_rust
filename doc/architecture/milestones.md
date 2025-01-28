@@ -8,22 +8,22 @@ The development of the ACCI Framework follows an MVP (Minimum Viable Product) ap
 **Goal**: Basic multi-tenant infrastructure with essential security features
 
 ### Core Features
-- [x] Basic Multi-Tenant Support
+- [ ] Basic Multi-Tenant Support
   - Tenant Isolation (PostgreSQL RLS)
   - Tenant Management API
   - Basic Authentication
 
-- [x] Identity Management (Minimal)
+- [ ] Identity Management (Minimal)
   - Local User Authentication
   - Session Management
   - Basic RBAC Functions
 
-- [x] API Layer
+- [ ] API Layer
   - REST API with Versioning (v1)
   - OpenAPI Documentation
   - Error Handling
 
-- [x] Observability
+- [ ] Observability
   - Structured Logging
   - Basic Metrics
   - Health Checks
