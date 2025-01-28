@@ -15,4 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tenant isolation through Row Level Security
 - Authentication service structure with password hashing
 - Tenant management API with CRUD operations
+- Improved identity module with proper tenant awareness and error handling
+- Session management with JWT tokens and Redis storage
 - Database migrations system with initial schema

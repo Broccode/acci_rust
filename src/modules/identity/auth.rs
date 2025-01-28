@@ -3,7 +3,6 @@ use argon2::{
     Argon2,
 };
 use rand_core::OsRng;
-use time::OffsetDateTime;
 
 use crate::shared::{
     error::{Error, Result},
@@ -13,22 +12,33 @@ use crate::shared::{
 use super::{
     models::{User, Credentials},
     repository::UserRepository,
+    session::{Session, SessionStore, JwtConfig},
+    session_manager::SessionManager,
 };
 
 /// Service for handling user authentication
 #[derive(Debug)]
 pub struct AuthenticationService {
     repository: UserRepository,
+    session_manager: SessionManager,
 }
 
 impl AuthenticationService {
     /// Creates a new AuthenticationService instance
-    pub fn new(repository: UserRepository) -> Self {
-        Self { repository }
+    pub fn new(
+        repository: UserRepository,
+        session_store: Box<dyn SessionStore>,
+        jwt_config: JwtConfig,
+    ) -> Self {
+        let session_manager = SessionManager::new(session_store, jwt_config);
+        Self {
+            repository,
+            session_manager,
+        }
     }
 
     /// Authenticates a user with their credentials
-    pub async fn authenticate(&self, credentials: Credentials) -> Result<User> {
+    pub async fn authenticate(&self, credentials: Credentials) -> Result<(User, Session)> {
         // Set tenant context for the repository
         self.repository.set_tenant_context(credentials.tenant_id).await?;
 
@@ -54,7 +64,30 @@ impl AuthenticationService {
         // Update last login timestamp
         self.repository.update_last_login(user.id).await?;
 
-        Ok(user)
+        // Create session
+        let session = self.session_manager.create_session(&user).await?;
+
+        Ok((user, session))
+    }
+
+    /// Validates a session token
+    pub async fn validate_session(&self, token: &str) -> Result<Session> {
+        self.session_manager.validate_token(token).await
+    }
+
+    /// Refreshes a session
+    pub async fn refresh_session(&self, session_id: uuid::Uuid) -> Result<Session> {
+        self.session_manager.refresh_session(session_id).await
+    }
+
+    /// Logs out a user by removing their session
+    pub async fn logout(&self, session_id: uuid::Uuid) -> Result<()> {
+        self.session_manager.remove_session(session_id).await
+    }
+
+    /// Logs out all sessions for a user
+    pub async fn logout_all(&self, user_id: UserId) -> Result<()> {
+        self.session_manager.remove_user_sessions(user_id).await
     }
 
     /// Hashes a password using Argon2
@@ -72,7 +105,19 @@ impl AuthenticationService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use time::OffsetDateTime;
 
-    // TODO: Implement tests
-    // Will need to set up test database and migrations first
+    #[tokio::test]
+    async fn test_password_hashing() {
+        let password = "test_password";
+        let hash = AuthenticationService::hash_password(password).unwrap();
+
+        // Verify the hash is valid
+        let parsed_hash = PasswordHash::new(&hash).unwrap();
+        assert!(Argon2::default()
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok());
+    }
+
+    // More tests will be added once we have the test database setup
 }
