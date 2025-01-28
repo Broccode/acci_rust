@@ -6,3 +6,38 @@ edition = "2021"
 rust-version = "1.84.0"
 
 [dependencies]
+# Web Framework
+axum = { version = "0.7", features = ["macros"] }
+tower = { version = "0.4", features = ["util", "timeout"] }
+tower-http = { version = "0.5", features = ["trace", "cors"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "time", "json"] }
+
+# Async Runtime
+tokio = { version = "1.36", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error Handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging & Metrics
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+uuid = { version = "1.7", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde"] }
+async-trait = "0.1"
+http-body-util = "0.1"
+hyper = { version = "1.0", features = ["full", "server"] }
+hyper-util = { version = "0.1", features = ["server", "tokio"] }
+headers = "0.4"
+argon2 = "0.5"
+rand_core = { version = "0.6", features = ["std"] }
+
+
