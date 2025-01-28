@@ -155,6 +155,10 @@ impl SessionStore for RedisSessionStore {
         let session_json = serde_json::to_string(session)
             .map_err(|e| Error::Internal(format!("Failed to serialize session: {}", e)))?;
 
+        let expiry_seconds = (session.expires_at - OffsetDateTime::now_utc())
+            .whole_seconds()
+            .max(0) as u64;
+
         // Use a Redis transaction to ensure atomicity
         redis::pipe()
             .atomic()
@@ -162,13 +166,13 @@ impl SessionStore for RedisSessionStore {
             .set_ex(
                 &session_key,
                 &session_json,
-                (session.expires_at - OffsetDateTime::now_utc()).whole_seconds() as usize,
+                expiry_seconds,
             )
             // Store token to session ID mapping
             .set_ex(
                 &token_key,
                 session.id.to_string(),
-                (session.expires_at - OffsetDateTime::now_utc()).whole_seconds() as usize,
+                expiry_seconds,
             )
             // Add session ID to user's sessions set
             .sadd(&user_sessions_key, session.id.to_string())

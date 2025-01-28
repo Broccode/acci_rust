@@ -12,12 +12,19 @@ use super::{
 };
 
 /// Manages user sessions and JWT tokens
-#[derive(Debug)]
 pub struct SessionManager {
     store: Box<dyn SessionStore>,
     jwt_config: JwtConfig,
     encoding_key: EncodingKey,
     decoding_key: DecodingKey,
+}
+
+impl std::fmt::Debug for SessionManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionManager")
+            // Skip fields that don't implement Debug
+            .finish_non_exhaustive()
+    }
 }
 
 impl SessionManager {
@@ -132,7 +139,6 @@ impl SessionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::identity::models::User;
     use time::OffsetDateTime;
 
     // Mock session store for testing

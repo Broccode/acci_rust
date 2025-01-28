@@ -43,13 +43,24 @@ pub struct Permission {
 }
 
 /// Represents possible actions for a permission
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum PermissionAction {
     #[default]
     Read,
     Write,
     Delete,
     Admin,
+}
+
+impl std::fmt::Display for PermissionAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Read => write!(f, "read"),
+            Self::Write => write!(f, "write"),
+            Self::Delete => write!(f, "delete"),
+            Self::Admin => write!(f, "admin"),
+        }
+    }
 }
 
 /// Represents user credentials for authentication

@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::shared::{
     error::{Error, Result},
@@ -26,7 +25,7 @@ impl PermissionCheck {
 }
 
 /// RBAC service for handling role-based access control
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RbacService {
     permissions_cache: moka::sync::Cache<TenantId, HashSet<PermissionCheck>>,
 }
@@ -131,10 +130,10 @@ where
     type Response = axum::http::Request<S>;
     type Error = Error;
     type Future = std::pin::Pin<Box<dyn std::future::Future<
-        Output = Result<Self::Response, Self::Error>
+        Output = Result<Self::Response>
     > + Send>>;
 
-    fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<std::result::Result<(), Self::Error>> {
         std::task::Poll::Ready(Ok(()))
     }
 
@@ -176,11 +175,11 @@ mod tests {
             password_hash: "hash".to_string(),
             roles: vec![
                 Role {
-                    id: Uuid::new_v4(),
+                    id: uuid::Uuid::new_v4(),
                     name: "test_role".to_string(),
                     permissions: vec![
                         Permission {
-                            id: Uuid::new_v4(),
+                            id: uuid::Uuid::new_v4(),
                             name: "test_permission".to_string(),
                             resource: "test_resource".to_string(),
                             action: PermissionAction::Read,
@@ -216,7 +215,7 @@ mod tests {
 
         // Add admin permission
         user.roles[0].permissions.push(Permission {
-            id: Uuid::new_v4(),
+            id: uuid::Uuid::new_v4(),
             name: "admin_permission".to_string(),
             resource: "test_resource".to_string(),
             action: PermissionAction::Admin,

@@ -7,16 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Basic multi-tenant database structure with PostgreSQL RLS
-- Initial database schema for users, roles, and permissions
-- Core framework structure with modular architecture
-- Identity management module foundation
-- Basic server setup with CORS and health check endpoint
-- Tenant isolation through Row Level Security
-- Authentication service structure with password hashing
-- Tenant management API with CRUD operations
-- Improved identity module with proper tenant awareness and error handling
+- Multi-tenant infrastructure with PostgreSQL RLS
+- Identity management with authentication and authorization
 - Session management with JWT tokens and Redis storage
 - Basic RBAC implementation with permission checks and caching
-- Comprehensive integration tests for core functionality
+- Database schema with multi-tenant support and row-level security
 - Database migrations system with initial schema
+- Comprehensive integration tests for core functionality
+- Health check endpoint with CORS support
+- Error handling with custom error types
+- Tenant management API with CRUD operations
+- Improved identity module with proper tenant awareness
+- Configuration system with environment variable support
+- Docker Compose setup for development environment
+
+### Changed
+- Updated dependencies to latest stable versions
+- Improved project structure with modular organization
+- Enhanced error handling with better context
+
+### Security
+- Implemented row-level security for tenant isolation
+- Added JWT-based authentication
+- Implemented RBAC with permission caching
+- Added session management with Redis
+- Secure password hashing with Argon2
