@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT r.id, r.name,\n                   array_agg(p.id) as permission_ids,\n                   array_agg(p.name) as permission_names,\n                   array_agg(p.resource) as permission_resources,\n                   array_agg(p.action) as permission_actions\n            FROM roles r\n            LEFT JOIN role_permissions rp ON r.id = rp.role_id\n            LEFT JOIN permissions p ON rp.permission_id = p.id\n            WHERE r.id = ANY($1)\n            GROUP BY r.id, r.name\n            ",
+  "query": "\n            SELECT \n                r.id,\n                r.name,\n                COALESCE(array_agg(p.id) FILTER (WHERE p.id IS NOT NULL), '{}') as permission_ids,\n                COALESCE(array_agg(p.name) FILTER (WHERE p.id IS NOT NULL), '{}') as permission_names,\n                COALESCE(array_agg(p.resource) FILTER (WHERE p.id IS NOT NULL), '{}') as permission_resources,\n                COALESCE(array_agg(p.action) FILTER (WHERE p.id IS NOT NULL), '{}') as permission_actions\n            FROM roles r\n            LEFT JOIN role_permissions rp ON r.id = rp.role_id\n            LEFT JOIN permissions p ON rp.permission_id = p.id\n            WHERE r.id = ANY($1)\n            GROUP BY r.id, r.name\n            ",
   "describe": {
     "columns": [
       {
@@ -48,5 +48,5 @@
       null
     ]
   },
-  "hash": "621db1e0d81b4899e5ce2d041d03cc012c4c0c4e7d9cac53b367e5a13f36335a"
+  "hash": "0d85cc94cc8a1c0f381b47a7f850668c56559d28e297ba8b53889d3c583f2a76"
 }

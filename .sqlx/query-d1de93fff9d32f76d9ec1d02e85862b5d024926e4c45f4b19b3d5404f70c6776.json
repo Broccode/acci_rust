@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT u.*, array_agg(r.id) as role_ids\n            FROM users u\n            LEFT JOIN user_roles ur ON u.id = ur.user_id\n            LEFT JOIN roles r ON ur.role_id = r.id\n            WHERE u.id = $1\n            GROUP BY u.id\n            ",
+  "query": "\n            SELECT \n                u.*,\n                COALESCE(array_agg(r.id) FILTER (WHERE r.id IS NOT NULL), '{}') as role_ids\n            FROM users u\n            LEFT JOIN user_roles ur ON u.id = ur.user_id\n            LEFT JOIN roles r ON ur.role_id = r.id\n            WHERE u.id = $1\n            GROUP BY u.id\n            ",
   "describe": {
     "columns": [
       {
@@ -66,5 +66,5 @@
       null
     ]
   },
-  "hash": "a1fb49972f6192ee48ec25022a475d7a45c37caf94f9d5c95b072c4ece87d46f"
+  "hash": "d1de93fff9d32f76d9ec1d02e85862b5d024926e4c45f4b19b3d5404f70c6776"
 }

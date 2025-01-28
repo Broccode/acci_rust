@@ -44,16 +44,21 @@ impl Server {
     pub async fn run(self) -> Result<()> {
         let app = self.create_router();
 
-        let addr = format!("{}:{}", self.config.server.host, self.config.server.port).parse()
-            .map_err(|e| Error::Internal(format!("Invalid address: {}", e)))?;
-        info!("Starting server on {}", addr);
+        let addr = SocketAddr::new(
+            self.config.server.host.parse()
+                .map_err(|e| Error::Internal(format!("Invalid host address: {}", e)))?,
+            self.config.server.port,
+        );
 
-        let listener = tokio::net::TcpListener::bind(addr).await
-            .map_err(|e| Error::Internal(e.to_string()))?;
+        info!("Starting server on http://{}:{}", self.config.server.host, self.config.server.port);
 
-        axum::serve(listener, app)
-            .await
-            .map_err(|e| Error::Internal(e.to_string()))?;
+        axum::serve(
+            tokio::net::TcpListener::bind(&addr).await
+                .map_err(|e| Error::Internal(e.to_string()))?,
+            app,
+        )
+        .await
+        .map_err(|e| Error::Internal(e.to_string()))?;
 
         Ok(())
     }

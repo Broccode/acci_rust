@@ -68,7 +68,9 @@ impl UserRepository {
         
         let user = sqlx::query!(
             r#"
-            SELECT u.*, array_agg(r.id) as role_ids
+            SELECT 
+                u.*,
+                COALESCE(array_agg(r.id) FILTER (WHERE r.id IS NOT NULL), '{}') as role_ids
             FROM users u
             LEFT JOIN user_roles ur ON u.id = ur.user_id
             LEFT JOIN roles r ON ur.role_id = r.id
@@ -81,9 +83,9 @@ impl UserRepository {
         .await?
         .ok_or_else(|| Error::NotFound(format!("User not found: {}", id.0)))?;
 
-        // Fetch roles with permissions
-        let roles = if let Some(role_ids) = user.role_ids {
-            self.get_roles_with_permissions(&role_ids).await?
+        // Fetch roles with permissions if there are any
+        let roles = if !user.role_ids.is_empty() {
+            self.get_roles_with_permissions(&user.role_ids).await?
         } else {
             vec![]
         };
@@ -101,56 +103,19 @@ impl UserRepository {
         })
     }
 
-    /// Retrieves a user by their email within a tenant
-    pub async fn get_user_by_email(&self, email: &str, tenant_id: TenantId) -> Result<User> {
-        let pool = self.db.pool();
-        
-        let user = sqlx::query!(
-            r#"
-            SELECT id
-            FROM users
-            WHERE email = $1 AND tenant_id = $2
-            "#,
-            email,
-            tenant_id.0,
-        )
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| Error::NotFound(format!("User not found: {}", email)))?;
-
-        self.get_user_by_id(UserId(user.id)).await
-    }
-
-    /// Updates a user's last login timestamp
-    pub async fn update_last_login(&self, user_id: UserId) -> Result<()> {
-        let pool = self.db.pool();
-        
-        sqlx::query!(
-            r#"
-            UPDATE users
-            SET last_login = $1, updated_at = $1
-            WHERE id = $2
-            "#,
-            OffsetDateTime::now_utc(),
-            user_id.0,
-        )
-        .execute(pool)
-        .await?;
-
-        Ok(())
-    }
-
     /// Retrieves roles with their permissions
     async fn get_roles_with_permissions(&self, role_ids: &[Uuid]) -> Result<Vec<Role>> {
         let pool = self.db.pool();
         
         let roles = sqlx::query!(
             r#"
-            SELECT r.id, r.name,
-                   array_agg(p.id) as permission_ids,
-                   array_agg(p.name) as permission_names,
-                   array_agg(p.resource) as permission_resources,
-                   array_agg(p.action) as permission_actions
+            SELECT 
+                r.id,
+                r.name,
+                COALESCE(array_agg(p.id) FILTER (WHERE p.id IS NOT NULL), '{}') as permission_ids,
+                COALESCE(array_agg(p.name) FILTER (WHERE p.id IS NOT NULL), '{}') as permission_names,
+                COALESCE(array_agg(p.resource) FILTER (WHERE p.id IS NOT NULL), '{}') as permission_resources,
+                COALESCE(array_agg(p.action) FILTER (WHERE p.id IS NOT NULL), '{}') as permission_actions
             FROM roles r
             LEFT JOIN role_permissions rp ON r.id = rp.role_id
             LEFT JOIN permissions p ON rp.permission_id = p.id
@@ -164,11 +129,8 @@ impl UserRepository {
 
         Ok(roles
             .into_iter()
-            .map(|role| Role {
-                id: role.id,
-                name: role.name,
-                permissions: role
-                    .permission_ids
+            .map(|role| {
+                let permissions = role.permission_ids
                     .into_iter()
                     .zip(role.permission_names)
                     .zip(role.permission_resources)
@@ -177,9 +139,15 @@ impl UserRepository {
                         id,
                         name,
                         resource,
-                        action: serde_json::from_value(action).unwrap(),
+                        action: serde_json::from_str(&action).unwrap_or_default(),
                     })
-                    .collect(),
+                    .collect();
+
+                Role {
+                    id: role.id,
+                    name: role.name,
+                    permissions,
+                }
             })
             .collect())
     }
@@ -200,6 +168,6 @@ impl TenantAware for UserRepository {
 mod tests {
     use super::*;
 
-    // TODO: Implement tests using test database
+    // TODO: Implement tests
     // Will need to set up test database and migrations first
 }

@@ -26,7 +26,7 @@ impl TenantScoped for User {
 }
 
 /// Represents a role in the system
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Role {
     pub id: Uuid,
     pub name: String,
@@ -34,7 +34,7 @@ pub struct Role {
 }
 
 /// Represents a permission in the system
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Permission {
     pub id: Uuid,
     pub name: String,
@@ -43,17 +43,17 @@ pub struct Permission {
 }
 
 /// Represents possible actions for a permission
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum PermissionAction {
-    Create,
+    #[default]
     Read,
-    Update,
+    Write,
     Delete,
-    All,
+    Admin,
 }
 
 /// Represents user credentials for authentication
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Credentials {
     pub email: String,
     pub password: String,
@@ -63,6 +63,11 @@ pub struct Credentials {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_permission_action_default() {
+        assert_eq!(PermissionAction::default(), PermissionAction::Read);
+    }
 
     #[test]
     fn test_user_tenant_scoped() {
