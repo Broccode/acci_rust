@@ -19,6 +19,9 @@ rustls = "0.22"
 sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "time", "uuid"] }
 redis = { version = "0.24", features = ["tokio-comp", "json"] }
 
+# Caching
+moka = { version = "0.12", features = ["sync"] }
+
 # Web Framework
 axum = { version = "0.7", features = ["macros"] }
 tower-http = { version = "0.5", features = ["cors", "trace"] }

@@ -13,6 +13,7 @@ use super::{
     models::{User, Credentials},
     repository::UserRepository,
     session::{Session, SessionStore, JwtConfig},
+    rbac::RbacService,
     session_manager::SessionManager,
 };
 
@@ -21,6 +22,7 @@ use super::{
 pub struct AuthenticationService {
     repository: UserRepository,
     session_manager: SessionManager,
+    rbac: RbacService,
 }
 
 impl AuthenticationService {
@@ -29,11 +31,13 @@ impl AuthenticationService {
         repository: UserRepository,
         session_store: Box<dyn SessionStore>,
         jwt_config: JwtConfig,
+        rbac: RbacService,
     ) -> Self {
         let session_manager = SessionManager::new(session_store, jwt_config);
         Self {
             repository,
             session_manager,
+            rbac,
         }
     }
 
@@ -88,6 +92,11 @@ impl AuthenticationService {
     /// Logs out all sessions for a user
     pub async fn logout_all(&self, user_id: UserId) -> Result<()> {
         self.session_manager.remove_user_sessions(user_id).await
+    }
+    
+    /// Returns a reference to the RBAC service
+    pub fn rbac(&self) -> &RbacService {
+        &self.rbac
     }
 
     /// Hashes a password using Argon2

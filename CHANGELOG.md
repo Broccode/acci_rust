@@ -17,4 +17,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tenant management API with CRUD operations
 - Improved identity module with proper tenant awareness and error handling
 - Session management with JWT tokens and Redis storage
+- Basic RBAC implementation with permission checks and caching
 - Database migrations system with initial schema
