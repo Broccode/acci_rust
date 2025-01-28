@@ -1,62 +1,49 @@
 use crate::shared::{
-    error::Result,
+    error::{Error, Result},
     types::{TenantId, UserId},
+    traits::TenantAware,
 };
 use super::{
-    auth::AuthenticationService,
-    models::{Credentials, User},
+    models::User,
     repository::UserRepository,
 };
 
-/// Main service for identity management
+/// Service for managing user identities
 #[derive(Debug)]
 pub struct IdentityModule {
     repository: UserRepository,
-    auth_service: AuthenticationService,
 }
 
 impl IdentityModule {
     /// Creates a new IdentityModule instance
-    pub fn new(repository: UserRepository, auth_service: AuthenticationService) -> Self {
-        Self {
-            repository,
-            auth_service,
-        }
-    }
-
-    /// Authenticates a user with the provided credentials
-    pub async fn authenticate(&self, credentials: Credentials) -> Result<User> {
-        self.auth_service.authenticate(credentials).await
+    pub fn new(repository: UserRepository) -> Self {
+        Self { repository }
     }
 
     /// Creates a new user
-    pub async fn create_user(
-        &self,
-        email: String,
-        password: String,
-        tenant_id: TenantId,
-    ) -> Result<User> {
-        self.auth_service
-            .create_user(email, password, tenant_id)
-            .await
+    pub async fn create_user(&self, user: User) -> Result<User> {
+        self.repository.create_user(&user).await
     }
 
     /// Retrieves a user by their ID
-    pub async fn get_user(&self, user_id: UserId, tenant_id: TenantId) -> Result<User> {
-        self.repository.set_tenant_context(tenant_id).await?;
-        let user = self.repository.get_user_by_id(user_id).await?;
-        self.repository.clear_tenant_context().await?;
-        Ok(user)
+    pub async fn get_user(&self, id: UserId) -> Result<User> {
+        self.repository.get_user_by_id(id).await
     }
 
     /// Returns a reference to the user repository
     pub fn repository(&self) -> &UserRepository {
         &self.repository
     }
+}
 
-    /// Returns a reference to the authentication service
-    pub fn auth_service(&self) -> &AuthenticationService {
-        &self.auth_service
+#[async_trait::async_trait]
+impl TenantAware for IdentityModule {
+    async fn set_tenant_context(&self, tenant_id: TenantId) -> Result<()> {
+        self.repository.set_tenant_context(tenant_id).await
+    }
+
+    async fn clear_tenant_context(&self) -> Result<()> {
+        self.repository.clear_tenant_context().await
     }
 }
 
