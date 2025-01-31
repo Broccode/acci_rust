@@ -93,7 +93,20 @@ pub fn has_permission(user: &User, action: PermissionAction, resource: &str) -> 
 
 /// Creates a new user role
 pub fn create_user_role() -> Role {
-    Role::new(RoleType::User, "User".to_string())
+    let mut role = Role::new(RoleType::User, "User".to_string());
+    role.permissions = vec![
+        Permission::new(
+            "Create User".to_string(),
+            PermissionAction::Create,
+            "users".to_string(),
+        ),
+        Permission::new(
+            "Read User".to_string(),
+            PermissionAction::Read,
+            "users".to_string(),
+        ),
+    ];
+    role
 }
 
 /// Creates a new admin role
@@ -233,7 +246,7 @@ mod tests {
         let role = create_user_role();
         assert_eq!(role.role_type, RoleType::User);
         assert_eq!(role.name, "User");
-        assert!(role.permissions.is_empty());
+        assert_eq!(role.permissions.len(), 2);
     }
 
     #[test]

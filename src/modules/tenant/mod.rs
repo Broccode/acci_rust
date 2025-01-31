@@ -9,24 +9,24 @@ use axum::Router;
 /// Tenant module for managing tenants
 #[derive(Debug, Clone)]
 pub struct TenantModule {
-    db: Database,
+    service: service::TenantService,
 }
 
 impl TenantModule {
     /// Creates a new tenant module
     pub fn new(db: Database) -> Self {
-        Self { db }
+        Self {
+            service: service::TenantService::new(repository::TenantRepository::new(db.get_pool())),
+        }
     }
 
-    /// Creates the tenant module router
+    /// Gets the router for this module
     pub fn router(&self) -> Result<Router> {
-        let repository = repository::TenantRepository::new(self.db.get_pool());
-        let service = service::TenantService::new(repository);
-        Ok(handlers::router(service))
+        Ok(handlers::router(self.service.clone()))
     }
 }
 
-/// Creates the tenant module router
+/// Creates a router for the tenant module
 pub fn router(db: Database) -> Result<Router> {
     let module = TenantModule::new(db);
     module.router()
@@ -35,19 +35,18 @@ pub fn router(db: Database) -> Result<Router> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::database::tests::create_test_db;
     use axum::{
         body::Body,
         http::{Request, StatusCode},
     };
     use serde_json::json;
     use tower::ServiceExt;
-    use uuid::Uuid;
 
     #[tokio::test]
-    async fn test_create_tenant() {
-        let db = Database::default();
-        let module = TenantModule::new(db);
-        let app = module.router().unwrap();
+    async fn test_create_tenant() -> Result<()> {
+        let (db, _container) = create_test_db().await?;
+        let app = router(db)?.into_service();
 
         let response = app
             .oneshot(
@@ -58,6 +57,7 @@ mod tests {
                     .body(Body::from(
                         json!({
                             "name": "Test Tenant",
+                            "domain": "test.example.com"
                         })
                         .to_string(),
                     ))
@@ -67,20 +67,19 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::CREATED);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_get_tenant() {
-        let db = Database::default();
-        let module = TenantModule::new(db);
-        let app = module.router().unwrap();
+    async fn test_get_tenant() -> Result<()> {
+        let (db, _container) = create_test_db().await?;
+        let app = router(db)?.into_service();
 
-        let tenant_id = TenantId(Uuid::new_v4());
         let response = app
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(&format!("/tenants/{}", tenant_id.0))
+                    .uri("/tenants/00000000-0000-0000-0000-000000000000")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -88,5 +87,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        Ok(())
     }
 }

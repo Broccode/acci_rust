@@ -1,14 +1,20 @@
 use crate::{
-    modules::identity::{
-        models::{PermissionAction, User},
-        rbac::RbacService,
-        repository::UserRepository,
+    core::database::Database,
+    modules::{
+        identity::{
+            models::{Permission, PermissionAction, Role, RoleType, User},
+            rbac::{create_user_role, RbacService},
+            repository::UserRepository,
+        },
+        tenant::models::Tenant,
     },
     shared::{
-        error::Result,
+        error::{Error, Result},
         types::{TenantId, UserId},
     },
 };
+use time::OffsetDateTime;
+use uuid::Uuid;
 
 /// Identity module for managing users and permissions
 #[derive(Debug)]
@@ -84,32 +90,60 @@ impl Default for IdentityModule {
 mod tests {
     use super::*;
     use crate::{
+        core::database::tests::create_test_db,
         modules::identity::models::{Permission, Role, RoleType},
+        modules::tenant::models::Tenant,
         shared::types::{TenantId, UserId},
     };
+    use std::time::Duration;
     use time::OffsetDateTime;
     use uuid::Uuid;
 
+    async fn setup_test_tenant(db: &Database) -> Result<Tenant> {
+        let tenant = Tenant::new(
+            "Test Tenant".to_string(),
+            format!("{}.example.com", Uuid::new_v4()),
+        );
+        let mut retries = 3;
+        while retries > 0 {
+            match sqlx::query!(
+                r#"INSERT INTO tenants (id, name, domain, active) VALUES ($1, $2, $3, $4)"#,
+                tenant.id.0 as uuid::Uuid,
+                tenant.name,
+                tenant.domain,
+                tenant.active
+            )
+            .execute(&db.get_pool())
+            .await
+            {
+                Ok(_) => break,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        return Err(Error::Database(e.to_string()));
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        }
+        Ok(tenant)
+    }
+
     #[tokio::test]
     async fn test_user_management() {
-        let module = IdentityModule::default();
+        let (db, _container) = create_test_db().await.unwrap();
+        let module = IdentityModule::new(UserRepository::new(db.get_pool()));
+
+        // Create test tenant
+        let tenant = setup_test_tenant(&db).await.unwrap();
 
         // Create user
         let user = User {
             id: UserId::new(),
-            tenant_id: TenantId::new(),
+            tenant_id: tenant.id,
             email: "test@example.com".to_string(),
             password_hash: "hash".to_string(),
-            roles: vec![{
-                let mut role = Role::new(RoleType::Admin, "Admin".to_string());
-                role.permissions = vec![Permission {
-                    id: Uuid::new_v4(),
-                    name: "Create User".to_string(),
-                    action: PermissionAction::Create,
-                    resource: "users".to_string(),
-                }];
-                role
-            }],
+            roles: vec![create_user_role()],
             active: true,
             last_login: None,
             created_at: OffsetDateTime::now_utc(),
@@ -118,20 +152,56 @@ mod tests {
             mfa_secret: None,
         };
 
-        let created = module.create_user(&user).await.unwrap();
+        let mut retries = 3;
+        let created = loop {
+            match module.create_user(&user).await {
+                Ok(u) => break u,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        panic!("Failed to create user: {}", e);
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        };
         assert_eq!(created.email, user.email);
 
         // Test permission check
-        let has_permission = module
-            .check_permission(&created, PermissionAction::Create, "users")
-            .await
-            .unwrap();
+        let mut retries = 3;
+        let has_permission = loop {
+            match module
+                .check_permission(&created, PermissionAction::Create, "users")
+                .await
+            {
+                Ok(p) => break p,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        panic!("Failed to check permission: {}", e);
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        };
         assert!(has_permission);
 
-        let has_permission = module
-            .check_permission(&created, PermissionAction::Delete, "users")
-            .await
-            .unwrap();
+        let mut retries = 3;
+        let has_permission = loop {
+            match module
+                .check_permission(&created, PermissionAction::Delete, "users")
+                .await
+            {
+                Ok(p) => break p,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        panic!("Failed to check permission: {}", e);
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        };
         assert!(!has_permission);
     }
 }

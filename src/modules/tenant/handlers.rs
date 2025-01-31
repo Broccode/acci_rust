@@ -1,9 +1,12 @@
+use crate::shared::error::Error;
 use axum::http::StatusCode;
 use axum::{
     extract::{Path, State},
+    response::IntoResponse,
     routing::{get, post, put},
     Json, Router,
 };
+use time;
 use uuid::Uuid;
 
 use crate::{
@@ -15,65 +18,80 @@ use crate::{
 };
 
 /// Creates a new tenant
-#[axum::debug_handler]
-async fn create_tenant(
+pub async fn create_tenant(
     State(service): State<TenantService>,
     Json(request): Json<TenantRequest>,
-) -> Result<(StatusCode, Json<TenantResponse>)> {
-    let tenant = Tenant::new(request.name);
-    let created = service.create_tenant(tenant).await?;
-    Ok((StatusCode::CREATED, Json(created.into())))
+) -> Result<impl IntoResponse> {
+    let tenant = service.create_tenant(request.into()).await?;
+    Ok((StatusCode::CREATED, Json(TenantResponse::from(tenant))))
 }
 
 /// Gets a tenant by ID
-#[axum::debug_handler]
-async fn get_tenant(
+pub async fn get_tenant(
     State(service): State<TenantService>,
-    Path(id): Path<Uuid>,
-) -> Result<(StatusCode, Json<TenantResponse>)> {
-    let tenant = service.get_tenant(TenantId(id)).await?;
-    Ok((StatusCode::OK, Json(tenant.into())))
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse> {
+    let id = Uuid::parse_str(&id)
+        .map_err(|e| crate::shared::error::Error::InvalidInput(format!("Invalid UUID: {}", e)))?;
+
+    match service.get_tenant(id).await? {
+        Some(t) => Ok((StatusCode::OK, Json(t))),
+        None => Ok((
+            StatusCode::NOT_FOUND,
+            Json(Tenant {
+                id: TenantId(uuid::Uuid::nil()),
+                name: String::new(),
+                domain: String::new(),
+                active: false,
+                created_at: time::OffsetDateTime::now_utc(),
+                updated_at: time::OffsetDateTime::now_utc(),
+            }),
+        )),
+    }
 }
 
 /// Updates a tenant
-#[axum::debug_handler]
-async fn update_tenant(
+pub async fn update_tenant(
     State(service): State<TenantService>,
-    Path(id): Path<Uuid>,
+    Path(id): Path<String>,
     Json(request): Json<TenantRequest>,
-) -> Result<(StatusCode, Json<TenantResponse>)> {
-    let mut tenant = service.get_tenant(TenantId(id)).await?;
-    tenant.name = request.name;
+) -> Result<impl IntoResponse> {
+    let id = Uuid::parse_str(&id)
+        .map_err(|e| crate::shared::error::Error::InvalidInput(format!("Invalid UUID: {}", e)))?;
+
+    let mut tenant: Tenant = request.into();
+    tenant.id = TenantId(id);
+
     let updated = service.update_tenant(tenant).await?;
-    Ok((StatusCode::OK, Json(updated.into())))
+    Ok((StatusCode::OK, Json(TenantResponse::from(updated))))
 }
 
 /// Lists all tenants
-#[axum::debug_handler]
-async fn list_tenants(
-    State(service): State<TenantService>,
-) -> Result<(StatusCode, Json<Vec<TenantResponse>>)> {
+pub async fn list_tenants(State(service): State<TenantService>) -> Result<impl IntoResponse> {
     let tenants = service.list_tenants().await?;
     Ok((
         StatusCode::OK,
-        Json(tenants.into_iter().map(Into::into).collect()),
+        Json(
+            tenants
+                .into_iter()
+                .map(TenantResponse::from)
+                .collect::<Vec<_>>(),
+        ),
     ))
 }
 
 /// Creates the tenant module router
 pub fn router(service: TenantService) -> Router {
     Router::new()
-        .route("/tenants", post(create_tenant))
-        .route("/tenants", get(list_tenants))
-        .route("/tenants/:id", get(get_tenant))
-        .route("/tenants/:id", put(update_tenant))
+        .route("/tenants", post(create_tenant).get(list_tenants))
+        .route("/tenants/:id", get(get_tenant).put(update_tenant))
         .with_state(service)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::database::Database;
+    use crate::core::database::tests::create_test_db;
     use axum::{
         body::Body,
         http::{Request, StatusCode},
@@ -82,11 +100,11 @@ mod tests {
     use tower::ServiceExt;
 
     #[tokio::test]
-    async fn test_create_tenant() {
-        let db = Database::default();
+    async fn test_create_tenant() -> Result<()> {
+        let (db, _container) = create_test_db().await?;
         let repository = crate::modules::tenant::repository::TenantRepository::new(db.get_pool());
         let service = TenantService::new(repository);
-        let app = router(service);
+        let app = router(service).into_service();
 
         let response = app
             .oneshot(
@@ -97,6 +115,7 @@ mod tests {
                     .body(Body::from(
                         json!({
                             "name": "Test Tenant",
+                            "domain": "test.example.com"
                         })
                         .to_string(),
                     ))
@@ -106,21 +125,21 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::CREATED);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_get_tenant() {
-        let db = Database::default();
+    async fn test_get_tenant() -> Result<()> {
+        let (db, _container) = create_test_db().await?;
         let repository = crate::modules::tenant::repository::TenantRepository::new(db.get_pool());
         let service = TenantService::new(repository);
-        let app = router(service);
+        let app = router(service).into_service();
 
-        let tenant_id = TenantId(Uuid::new_v4());
         let response = app
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(&format!("/tenants/{}", tenant_id.0))
+                    .uri("/tenants/00000000-0000-0000-0000-000000000000")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -128,5 +147,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        Ok(())
     }
 }

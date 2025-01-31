@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved test coverage for tenant and identity modules
 - Refactored error handling system for better type safety
 - Updated database types for better SQLx integration
+- Improved error handling in tenant tests with proper UUID validation
+- Enhanced tenant handler responses for better error cases
 
 ### Fixed
 - Fixed Option unwrapping in authentication service
@@ -53,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed tenant isolation in database queries
 - Corrected error handling in tenant service
 - Fixed type conversions for database IDs
+- Fixed tenant handler tests to use valid UUID format
+- Fixed tenant response types in handlers
 
 ## [0.1.0] - 2025-01-28
 ### Added

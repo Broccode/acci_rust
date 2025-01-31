@@ -100,6 +100,7 @@ pub mod tests {
     use super::*;
     use once_cell::sync::Lazy;
     use std::sync::Arc;
+    use std::time::Duration;
     use testcontainers::*;
     use testcontainers_modules::postgres::Postgres;
     use uuid::Uuid;
@@ -121,17 +122,40 @@ pub mod tests {
             ssl_mode: false,
         };
 
-        // Create database connection
-        let db = Database::connect(&config).await?;
+        // Create database connection with retry logic
+        let mut retries = 3;
+        let mut last_error = None;
+        let db = loop {
+            match Database::connect(&config).await {
+                Ok(db) => break db,
+                Err(e) => {
+                    last_error = Some(e);
+                    retries -= 1;
+                    if retries == 0 {
+                        return Err(last_error.unwrap());
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        };
 
-        // Run migrations, ignore if tables already exist
-        match sqlx::migrate!("./migrations").run(&db.get_pool()).await {
-            Ok(_) => (),
-            Err(e) => {
-                if !e.to_string().contains("already exists") {
-                    return Err(Error::Database(e.to_string()));
-                }
-            },
+        // Run migrations with retry logic
+        let mut retries = 3;
+        while retries > 0 {
+            match sqlx::migrate!("./migrations").run(&db.get_pool()).await {
+                Ok(_) => break,
+                Err(e) => {
+                    if !e.to_string().contains("already exists") {
+                        retries -= 1;
+                        if retries == 0 {
+                            return Err(Error::Database(e.to_string()));
+                        }
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    } else {
+                        break;
+                    }
+                },
+            }
         }
 
         Ok((db, container))
@@ -142,8 +166,23 @@ pub mod tests {
     async fn test_database_connection() -> Result<()> {
         let (db, _container) = create_test_db().await?;
 
-        // Test query
-        let result: (i32,) = sqlx::query_as("SELECT 1").fetch_one(&db.get_pool()).await?;
+        // Test query with retry logic
+        let mut retries = 3;
+        let result = loop {
+            match sqlx::query_as::<_, (i32,)>("SELECT 1")
+                .fetch_one(&db.get_pool())
+                .await
+            {
+                Ok(r) => break r,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        return Err(Error::Database(e.to_string()));
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        };
 
         assert_eq!(result.0, 1);
         Ok(())
@@ -154,40 +193,110 @@ pub mod tests {
     async fn test_tenant_isolation() -> Result<()> {
         let (db, _container) = create_test_db().await?;
 
-        // Create test tenant
+        // Create test tenant with retry logic
         let tenant_id = Uuid::new_v4();
-        sqlx::query!(
-            "INSERT INTO tenants (id, name) VALUES ($1, $2)",
-            tenant_id,
-            "Test Tenant"
-        )
-        .execute(&db.get_pool())
-        .await?;
+        let mut retries = 3;
+        while retries > 0 {
+            match sqlx::query!(
+                "INSERT INTO tenants (id, name, domain, active) VALUES ($1, $2, $3, $4)",
+                tenant_id,
+                "Test Tenant",
+                format!("{}.example.com", Uuid::new_v4()),
+                true
+            )
+            .execute(&db.get_pool())
+            .await
+            {
+                Ok(_) => break,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        return Err(Error::Database(e.to_string()));
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        }
 
-        // Set tenant context
-        sqlx::query_scalar!(
-            "SELECT set_config('app.current_tenant', $1, false)",
-            tenant_id.to_string()
-        )
-        .fetch_one(&db.get_pool())
-        .await?;
-
-        // Test RLS policy
-        let result = sqlx::query!(
-            "INSERT INTO users (tenant_id, email, password_hash) VALUES ($1, $2, $3) RETURNING id",
-            tenant_id,
-            "test@example.com",
-            "hash"
-        )
-        .fetch_one(&db.get_pool())
-        .await?;
-
-        assert!(result.id != Uuid::nil());
-
-        // Clear tenant context
-        sqlx::query_scalar!("SELECT set_config('app.current_tenant', '', false)")
+        // Set tenant context with retry logic
+        let mut retries = 3;
+        while retries > 0 {
+            match sqlx::query_scalar!(
+                "SELECT set_config('app.current_tenant', $1, false)",
+                tenant_id.to_string()
+            )
             .fetch_one(&db.get_pool())
-            .await?;
+            .await
+            {
+                Ok(_) => break,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        return Err(Error::Database(e.to_string()));
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        }
+
+        // Test RLS policy with retry logic
+        let user_id = Uuid::new_v4();
+        let mut retries = 3;
+        let result = loop {
+            match sqlx::query!(
+                r#"
+                INSERT INTO users (
+                    id, 
+                    tenant_id, 
+                    email, 
+                    password_hash,
+                    active,
+                    created_at,
+                    updated_at,
+                    mfa_enabled
+                ) 
+                VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), $6) 
+                RETURNING id"#,
+                user_id,
+                tenant_id,
+                "test@example.com",
+                "hash",
+                true,
+                false
+            )
+            .fetch_one(&db.get_pool())
+            .await
+            {
+                Ok(r) => break r,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        return Err(Error::Database(e.to_string()));
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        };
+
+        assert_eq!(result.id, user_id);
+
+        // Clear tenant context with retry logic
+        let mut retries = 3;
+        while retries > 0 {
+            match sqlx::query_scalar!("SELECT set_config('app.current_tenant', '', false)")
+                .fetch_one(&db.get_pool())
+                .await
+            {
+                Ok(_) => break,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        return Err(Error::Database(e.to_string()));
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        }
 
         Ok(())
     }

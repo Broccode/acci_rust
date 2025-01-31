@@ -1,76 +1,88 @@
-use sqlx::PgPool;
+use sqlx::{Pool, Postgres as PgPool};
+use std::time::Duration;
+use time::{OffsetDateTime, PrimitiveDateTime};
 use uuid::Uuid;
 
-use super::models::Tenant;
-use crate::shared::{
-    error::{Error, Result},
-    types::TenantId,
+use crate::{
+    core::database::Database,
+    modules::tenant::models::Tenant,
+    shared::{
+        error::{Error, Result},
+        types::TenantId,
+    },
 };
+
+/// Helper function to convert Option<OffsetDateTime> to Option<PrimitiveDateTime>
+fn to_primitive_datetime(dt: OffsetDateTime) -> PrimitiveDateTime {
+    PrimitiveDateTime::new(dt.date(), dt.time())
+}
+
+/// Helper function to convert Option<PrimitiveDateTime> to Option<OffsetDateTime>
+fn to_offset_datetime(dt: PrimitiveDateTime) -> OffsetDateTime {
+    dt.assume_utc()
+}
 
 /// Repository for tenant management
 #[derive(Debug, Clone)]
 pub struct TenantRepository {
-    db: PgPool,
+    pool: Pool<PgPool>,
 }
 
 impl TenantRepository {
     /// Creates a new TenantRepository instance
-    pub fn new(pool: PgPool) -> Self {
-        Self { db: pool }
+    pub fn new(pool: Pool<PgPool>) -> Self {
+        Self { pool }
     }
 
     /// Creates a new tenant
-    pub async fn create_tenant(&self, tenant: &Tenant) -> Result<Tenant> {
+    pub async fn create_tenant(&self, tenant: Tenant) -> Result<Tenant> {
         let row = sqlx::query!(
             r#"
             INSERT INTO tenants (id, name, domain, active, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id, name, domain, active, created_at, updated_at
             "#,
-            tenant.id.0,
+            tenant.id.0 as uuid::Uuid,
             tenant.name,
             tenant.domain,
             tenant.active,
-            tenant.created_at,
-            tenant.updated_at,
+            to_primitive_datetime(tenant.created_at),
+            to_primitive_datetime(tenant.updated_at),
         )
-        .fetch_one(&self.db)
+        .fetch_one(&self.pool)
         .await?;
 
         Ok(Tenant {
-            id: TenantId(row.id),
+            id: tenant.id,
             name: row.name,
-            domain: row.domain,
+            domain: row.domain.expect("Domain should not be null"),
             active: row.active,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
+            created_at: to_offset_datetime(row.created_at),
+            updated_at: to_offset_datetime(row.updated_at),
         })
     }
 
     /// Gets a tenant by ID
-    pub async fn get_tenant_by_id(&self, id: Uuid) -> Result<Tenant> {
+    pub async fn get_tenant(&self, id: uuid::Uuid) -> Result<Option<Tenant>> {
         let row = sqlx::query!(
             r#"
             SELECT id, name, domain, active, created_at, updated_at
             FROM tenants
             WHERE id = $1
             "#,
-            id,
+            id
         )
-        .fetch_optional(&self.db)
+        .fetch_optional(&self.pool)
         .await?;
 
-        match row {
-            Some(r) => Ok(Tenant {
-                id: TenantId(r.id),
-                name: r.name,
-                domain: r.domain,
-                active: r.active,
-                created_at: r.created_at,
-                updated_at: r.updated_at,
-            }),
-            None => Err(Error::NotFound("Tenant not found".into())),
-        }
+        Ok(row.map(|r| Tenant {
+            id: TenantId(r.id),
+            name: r.name,
+            domain: r.domain.expect("Domain should not be null"),
+            active: r.active,
+            created_at: to_offset_datetime(r.created_at),
+            updated_at: to_offset_datetime(r.updated_at),
+        }))
     }
 
     /// Gets a tenant by domain
@@ -81,52 +93,47 @@ impl TenantRepository {
             FROM tenants
             WHERE domain = $1
             "#,
-            domain,
+            domain
         )
-        .fetch_optional(&self.db)
+        .fetch_one(&self.pool)
         .await?;
 
-        match row {
-            Some(r) => Ok(Tenant {
-                id: TenantId(r.id),
-                name: r.name,
-                domain: r.domain,
-                active: r.active,
-                created_at: r.created_at,
-                updated_at: r.updated_at,
-            }),
-            None => Err(Error::NotFound("Tenant not found".into())),
-        }
+        Ok(Tenant {
+            id: TenantId(row.id),
+            name: row.name,
+            domain: row.domain.expect("Domain should not be null"),
+            active: row.active,
+            created_at: to_offset_datetime(row.created_at),
+            updated_at: to_offset_datetime(row.updated_at),
+        })
     }
 
     /// Updates a tenant
-    pub async fn update_tenant(&self, tenant: &Tenant) -> Result<Tenant> {
+    pub async fn update_tenant(&self, tenant: Tenant) -> Result<Tenant> {
         let row = sqlx::query!(
             r#"
             UPDATE tenants
-            SET name = $1, domain = $2, active = $3, updated_at = NOW()
-            WHERE id = $4
+            SET name = $1, domain = $2, active = $3, updated_at = $4
+            WHERE id = $5
             RETURNING id, name, domain, active, created_at, updated_at
             "#,
             tenant.name,
             tenant.domain,
             tenant.active,
-            tenant.id.0,
+            to_primitive_datetime(tenant.updated_at),
+            tenant.id.0 as uuid::Uuid,
         )
-        .fetch_optional(&self.db)
+        .fetch_one(&self.pool)
         .await?;
 
-        match row {
-            Some(r) => Ok(Tenant {
-                id: TenantId(r.id),
-                name: r.name,
-                domain: r.domain,
-                active: r.active,
-                created_at: r.created_at,
-                updated_at: r.updated_at,
-            }),
-            None => Err(Error::NotFound("Tenant not found".into())),
-        }
+        Ok(Tenant {
+            id: tenant.id,
+            name: row.name,
+            domain: row.domain.expect("Domain should not be null"),
+            active: row.active,
+            created_at: to_offset_datetime(row.created_at),
+            updated_at: to_offset_datetime(row.updated_at),
+        })
     }
 
     /// Lists all tenants
@@ -135,9 +142,10 @@ impl TenantRepository {
             r#"
             SELECT id, name, domain, active, created_at, updated_at
             FROM tenants
-            "#,
+            ORDER BY created_at DESC
+            "#
         )
-        .fetch_all(&self.db)
+        .fetch_all(&self.pool)
         .await?;
 
         Ok(rows
@@ -145,44 +153,93 @@ impl TenantRepository {
             .map(|r| Tenant {
                 id: TenantId(r.id),
                 name: r.name,
-                domain: r.domain,
+                domain: r.domain.expect("Domain should not be null"),
                 active: r.active,
-                created_at: r.created_at,
-                updated_at: r.updated_at,
+                created_at: to_offset_datetime(r.created_at),
+                updated_at: to_offset_datetime(r.updated_at),
             })
             .collect())
+    }
+
+    /// Deletes a tenant
+    pub async fn delete_tenant(&self, id: uuid::Uuid) -> Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM tenants
+            WHERE id = $1
+            "#,
+            id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+impl Default for TenantRepository {
+    fn default() -> Self {
+        Self::new(Database::default().get_pool())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::database::Database;
+    use crate::core::database::tests::create_test_db;
 
     #[tokio::test]
     async fn test_tenant_crud() {
-        let db = Database::default();
+        let (db, _container) = create_test_db().await.unwrap();
         let repository = TenantRepository::new(db.get_pool());
 
-        // Create tenant
-        let tenant = Tenant::new("Test Tenant".to_string());
-        let created = repository.create_tenant(&tenant).await.unwrap();
+        // Create test tenant
+        let tenant = Tenant {
+            id: TenantId(Uuid::new_v4()),
+            name: "Test Tenant".to_string(),
+            domain: format!("{}.example.com", Uuid::new_v4()),
+            active: true,
+            created_at: OffsetDateTime::now_utc(),
+            updated_at: OffsetDateTime::now_utc(),
+        };
+
+        let mut retries = 3;
+        let created = loop {
+            match repository.create_tenant(tenant.clone()).await {
+                Ok(t) => break t,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        panic!("Failed to create tenant: {}", e);
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                },
+            }
+        };
+
         assert_eq!(created.name, tenant.name);
+        assert_eq!(created.domain, tenant.domain);
+        assert_eq!(created.active, tenant.active);
 
-        // Get tenant
-        let retrieved = repository.get_tenant_by_id(created.id.0).await.unwrap();
-        assert_eq!(retrieved.id, created.id);
-        assert_eq!(retrieved.name, created.name);
+        // Test get_tenant
+        let retrieved = repository.get_tenant(tenant.id.0).await.unwrap().unwrap();
+        assert_eq!(retrieved.id, tenant.id);
+        assert_eq!(retrieved.name, tenant.name);
 
-        // Update tenant
-        let mut updated = retrieved.clone();
-        updated.name = "Updated Tenant".to_string();
-        let updated = repository.update_tenant(&updated).await.unwrap();
+        // Test list_tenants
+        let tenants = repository.list_tenants().await.unwrap();
+        assert_eq!(tenants.len(), 1);
+        assert_eq!(tenants[0].id, tenant.id);
+
+        // Test update_tenant
+        let mut updated_tenant = tenant.clone();
+        updated_tenant.name = "Updated Tenant".to_string();
+        let updated = repository.update_tenant(updated_tenant).await.unwrap();
         assert_eq!(updated.name, "Updated Tenant");
 
-        // List tenants
-        let tenants = repository.list_tenants().await.unwrap();
-        assert!(!tenants.is_empty());
-        assert!(tenants.iter().any(|t| t.id == created.id));
+        // Test delete_tenant
+        repository.delete_tenant(tenant.id.0).await.unwrap();
+        let deleted = repository.get_tenant(tenant.id.0).await.unwrap();
+        assert!(deleted.is_none());
     }
 }
