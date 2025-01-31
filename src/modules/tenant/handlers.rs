@@ -1,9 +1,9 @@
+use axum::http::StatusCode;
 use axum::{
     extract::{Path, State},
     routing::{get, post, put},
     Json, Router,
 };
-use axum::http::StatusCode;
 use uuid::Uuid;
 
 use crate::{
@@ -54,7 +54,10 @@ async fn list_tenants(
     State(service): State<TenantService>,
 ) -> Result<(StatusCode, Json<Vec<TenantResponse>>)> {
     let tenants = service.list_tenants().await?;
-    Ok((StatusCode::OK, Json(tenants.into_iter().map(Into::into).collect())))
+    Ok((
+        StatusCode::OK,
+        Json(tenants.into_iter().map(Into::into).collect()),
+    ))
 }
 
 /// Creates the tenant module router
@@ -70,14 +73,13 @@ pub fn router(service: TenantService) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::database::Database;
     use axum::{
         body::Body,
         http::{Request, StatusCode},
     };
     use serde_json::json;
     use tower::ServiceExt;
-
-    use crate::{core::database::Database, modules::tenant::TenantService};
 
     #[tokio::test]
     async fn test_create_tenant() {

@@ -1,14 +1,10 @@
+mod handlers;
 pub mod models;
 pub mod repository;
-mod service;
-mod handlers;
+pub mod service;
 
-
+use crate::{core::database::Database, shared::error::Result, shared::types::TenantId};
 use axum::Router;
-use crate::{
-    core::database::Database,
-    shared::error::Result,
-};
 
 /// Tenant module for managing tenants
 #[derive(Debug, Clone)]

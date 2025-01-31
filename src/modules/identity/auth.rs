@@ -3,7 +3,10 @@ use argon2::{
     Argon2,
 };
 use rand_core::OsRng;
+use std::collections::HashMap;
+use std::sync::Mutex;
 use time::OffsetDateTime;
+use uuid::Uuid;
 
 use super::{
     mfa::MfaService,

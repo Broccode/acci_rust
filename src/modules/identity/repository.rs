@@ -1,5 +1,6 @@
 use sqlx::{Pool, Postgres};
 use time::OffsetDateTime;
+use uuid::Uuid;
 
 use crate::{
     core::database::Database,
