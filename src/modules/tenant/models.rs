@@ -4,42 +4,40 @@ use uuid::Uuid;
 
 use crate::shared::types::TenantId;
 
-/// Represents a tenant in the system
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Tenant model
+#[derive(Debug, Clone)]
 pub struct Tenant {
     pub id: TenantId,
     pub name: String,
+    pub domain: Option<String>,
+    pub active: bool,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
 
 impl Tenant {
-    /// Creates a new tenant with the given name
+    /// Creates a new tenant
     pub fn new(name: String) -> Self {
         let now = OffsetDateTime::now_utc();
         Self {
-            id: TenantId(Uuid::new_v4()),
+            id: TenantId::new(),
             name,
+            domain: None,
+            active: true,
             created_at: now,
             updated_at: now,
         }
     }
 }
 
-/// Represents the data needed to create a new tenant
-#[derive(Debug, Deserialize)]
-pub struct CreateTenantRequest {
+/// Tenant request model
+#[derive(Debug, Clone, Deserialize)]
+pub struct TenantRequest {
     pub name: String,
 }
 
-/// Represents the data needed to update a tenant
-#[derive(Debug, Deserialize)]
-pub struct UpdateTenantRequest {
-    pub name: String,
-}
-
-/// Represents a tenant's details in API responses
-#[derive(Debug, Serialize)]
+/// Tenant response model
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TenantResponse {
     pub id: Uuid,
     pub name: String,
@@ -63,21 +61,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_create_tenant() {
+    fn test_tenant_creation() {
         let name = "Test Tenant".to_string();
         let tenant = Tenant::new(name.clone());
 
         assert_eq!(tenant.name, name);
-        assert!(tenant.created_at <= OffsetDateTime::now_utc());
-        assert_eq!(tenant.created_at, tenant.updated_at);
+        assert!(tenant.active);
+        assert!(tenant.domain.is_none());
     }
 
     #[test]
     fn test_tenant_response_conversion() {
         let tenant = Tenant::new("Test Tenant".to_string());
-        let tenant_id = tenant.id;
-        let response = TenantResponse::from(tenant);
+        let response = TenantResponse::from(tenant.clone());
 
-        assert_eq!(response.id, tenant_id.0);
+        assert_eq!(response.id, tenant.id.0);
+        assert_eq!(response.name, tenant.name);
+        assert_eq!(response.created_at, tenant.created_at);
+        assert_eq!(response.updated_at, tenant.updated_at);
     }
 }

@@ -1,12 +1,21 @@
-//! ACCI Framework library
-
 pub mod core;
 pub mod modules;
 pub mod shared;
 
-// Re-export commonly used items
-pub use crate::{
-    core::{config, database, server},
-    modules::{identity, tenant},
-    shared::{error, types, traits},
+pub use modules::{
+    identity::{
+        models::{User, Role, RoleType, Permission, PermissionAction, Credentials},
+        rbac::{PermissionCheck, RequirePermission},
+        AuthenticationService,
+        IdentityModule,
+    },
+    tenant::{
+        models::Tenant,
+        router as tenant_router,
+    },
+};
+
+pub use shared::{
+    error::{Error, Result},
+    types::{TenantId, UserId},
 };

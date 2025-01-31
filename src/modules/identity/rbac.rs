@@ -1,250 +1,254 @@
-use std::collections::HashSet;
-use serde::{Deserialize, Serialize};
+use moka::sync::Cache;
 
-use crate::shared::{
-    error::{Error, Result},
-    types::{TenantId, UserId},
+use crate::{
+    modules::identity::models::{Permission, PermissionAction, Role, RoleType, User},
+    shared::{
+        error::Result,
+        types::{TenantId, UserId},
+    },
 };
-use super::models::{User, Role, Permission, PermissionAction};
 
-/// Represents a permission check
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct PermissionCheck {
-    pub resource: String,
-    pub action: PermissionAction,
+/// RBAC service for handling permissions
+#[derive(Debug)]
+pub struct RbacService {
+    permission_cache: Cache<String, bool>,
 }
 
-impl PermissionCheck {
-    /// Creates a new permission check
-    pub fn new(resource: impl Into<String>, action: PermissionAction) -> Self {
+impl Default for RbacService {
+    fn default() -> Self {
         Self {
-            resource: resource.into(),
-            action,
+            permission_cache: Cache::builder()
+                .max_capacity(10_000)
+                .time_to_live(std::time::Duration::from_secs(300))
+                .build(),
         }
     }
-}
-
-/// RBAC service for handling role-based access control
-#[derive(Debug, Clone)]
-pub struct RbacService {
-    permissions_cache: moka::sync::Cache<TenantId, HashSet<PermissionCheck>>,
 }
 
 impl RbacService {
     /// Creates a new RbacService instance
     pub fn new() -> Self {
-        Self {
-            permissions_cache: moka::sync::Cache::builder()
-                .time_to_live(std::time::Duration::from_secs(300)) // 5 minutes
-                .build(),
-        }
+        Self::default()
     }
 
     /// Checks if a user has a specific permission
-    pub fn has_permission(&self, user: &User, check: &PermissionCheck) -> bool {
-        user.roles.iter().any(|role| {
-            role.permissions.iter().any(|perm| {
-                perm.resource == check.resource && 
-                match perm.action {
-                    PermissionAction::Admin => true, // Admin has all permissions
-                    _ => perm.action == check.action,
-                }
-            })
-        })
-    }
+    pub async fn check_permission(
+        &self,
+        user: &User,
+        action: PermissionAction,
+        resource: &str,
+    ) -> Result<bool> {
+        let cache_key = format!("{}:{}:{}", user.id.0, action, resource);
 
-    /// Checks if a user has all of the specified permissions
-    pub fn has_all_permissions(&self, user: &User, checks: &[PermissionCheck]) -> bool {
-        checks.iter().all(|check| self.has_permission(user, check))
-    }
-
-    /// Checks if a user has any of the specified permissions
-    pub fn has_any_permission(&self, user: &User, checks: &[PermissionCheck]) -> bool {
-        checks.iter().any(|check| self.has_permission(user, check))
-    }
-
-    /// Gets all permissions for a user
-    pub fn get_user_permissions(&self, user: &User) -> HashSet<PermissionCheck> {
-        let mut permissions = HashSet::new();
-        
-        for role in &user.roles {
-            for perm in &role.permissions {
-                permissions.insert(PermissionCheck::new(
-                    perm.resource.clone(),
-                    perm.action,
-                ));
-                
-                // If user has admin permission for a resource, add all other permissions
-                if perm.action == PermissionAction::Admin {
-                    permissions.insert(PermissionCheck::new(
-                        perm.resource.clone(),
-                        PermissionAction::Read,
-                    ));
-                    permissions.insert(PermissionCheck::new(
-                        perm.resource.clone(),
-                        PermissionAction::Write,
-                    ));
-                    permissions.insert(PermissionCheck::new(
-                        perm.resource.clone(),
-                        PermissionAction::Delete,
-                    ));
-                }
-            }
+        if let Some(has_permission) = self.permission_cache.get(&cache_key) {
+            return Ok(has_permission);
         }
 
-        permissions
+        let has_permission = user.roles.iter().any(|role| {
+            role.permissions
+                .iter()
+                .any(|permission| permission.action == action && permission.resource == resource)
+        });
+
+        self.permission_cache.insert(cache_key, has_permission);
+        Ok(has_permission)
     }
 
-    /// Caches permissions for a tenant
-    pub fn cache_tenant_permissions(&self, tenant_id: TenantId, permissions: HashSet<PermissionCheck>) {
-        self.permissions_cache.insert(tenant_id, permissions);
-    }
-
-    /// Gets cached permissions for a tenant
-    pub fn get_cached_tenant_permissions(&self, tenant_id: TenantId) -> Option<HashSet<PermissionCheck>> {
-        self.permissions_cache.get(&tenant_id)
-    }
-}
-
-/// Middleware for checking permissions
-pub struct RequirePermission {
-    check: PermissionCheck,
-    rbac: RbacService,
-}
-
-impl RequirePermission {
-    /// Creates a new RequirePermission middleware
-    pub fn new(resource: impl Into<String>, action: PermissionAction, rbac: RbacService) -> Self {
-        Self {
-            check: PermissionCheck::new(resource, action),
-            rbac,
-        }
+    /// Clears the permission cache for a user
+    pub fn clear_user_cache(&self, _user_id: UserId) {
+        self.permission_cache.invalidate_all();
     }
 }
 
+/// Permission check trait for request handlers
 #[async_trait::async_trait]
-impl<S> tower::Service<axum::http::Request<S>> for RequirePermission
-where
-    S: Send + 'static,
-{
-    type Response = axum::http::Request<S>;
-    type Error = Error;
-    type Future = std::pin::Pin<Box<dyn std::future::Future<
-        Output = Result<Self::Response>
-    > + Send>>;
+pub trait PermissionCheck {
+    /// Gets the user ID from the request
+    fn user_id(&self) -> Option<UserId>;
 
-    fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<std::result::Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
+    /// Gets the tenant ID from the request
+    fn tenant_id(&self) -> Option<TenantId>;
 
-    fn call(&mut self, request: axum::http::Request<S>) -> Self::Future {
-        let check = self.check.clone();
-        let rbac = self.rbac.clone();
+    /// Gets the required permission action
+    fn required_action(&self) -> PermissionAction;
 
-        Box::pin(async move {
-            // Get user from request extension
-            let user = request
-                .extensions()
-                .get::<User>()
-                .ok_or_else(|| Error::Authorization("User not found in request".to_string()))?;
+    /// Gets the required permission resource
+    fn required_resource(&self) -> &str;
+}
 
-            // Check permission
-            if !rbac.has_permission(user, &check) {
-                return Err(Error::Authorization(format!(
-                    "Missing required permission: {} {}",
-                    check.resource,
-                    check.action
-                )));
-            }
+/// Require permission attribute for request handlers
+pub struct RequirePermission {
+    pub action: PermissionAction,
+    pub resource: String,
+}
 
-            Ok(request)
-        })
-    }
+/// Checks if a user has the required permission
+pub fn has_permission(user: &User, action: PermissionAction, resource: &str) -> bool {
+    user.roles.iter().any(|role| {
+        role.permissions
+            .iter()
+            .any(|permission| permission.action == action && permission.resource == resource)
+    })
+}
+
+/// Creates a new user role
+pub fn create_user_role() -> Role {
+    Role::new(RoleType::User, "User".to_string())
+}
+
+/// Creates a new admin role
+pub fn create_admin_role() -> Role {
+    let mut role = Role::new(RoleType::Admin, "Admin".to_string());
+    role.permissions = vec![
+        Permission::new(
+            "Create User".to_string(),
+            PermissionAction::Create,
+            "users".to_string(),
+        ),
+        Permission::new(
+            "Read User".to_string(),
+            PermissionAction::Read,
+            "users".to_string(),
+        ),
+        Permission::new(
+            "Update User".to_string(),
+            PermissionAction::Update,
+            "users".to_string(),
+        ),
+        Permission::new(
+            "Delete User".to_string(),
+            PermissionAction::Delete,
+            "users".to_string(),
+        ),
+    ];
+    role
+}
+
+/// Creates a new super admin role
+pub fn create_super_admin_role() -> Role {
+    let mut role = Role::new(RoleType::SuperAdmin, "Super Admin".to_string());
+    role.permissions = vec![
+        Permission::new("All".to_string(), PermissionAction::Create, "*".to_string()),
+        Permission::new("All".to_string(), PermissionAction::Read, "*".to_string()),
+        Permission::new("All".to_string(), PermissionAction::Update, "*".to_string()),
+        Permission::new("All".to_string(), PermissionAction::Delete, "*".to_string()),
+    ];
+    role
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modules::identity::models::{Permission, Role, User};
     use time::OffsetDateTime;
+    use uuid::Uuid;
 
-    fn create_test_user() -> User {
-        User {
+    #[tokio::test]
+    async fn test_permission_check() {
+        let rbac = RbacService::new();
+
+        let user = User {
             id: UserId::new(),
             tenant_id: TenantId::new(),
             email: "test@example.com".to_string(),
             password_hash: "hash".to_string(),
-            roles: vec![
-                Role {
-                    id: uuid::Uuid::new_v4(),
-                    name: "test_role".to_string(),
-                    permissions: vec![
-                        Permission {
-                            id: uuid::Uuid::new_v4(),
-                            name: "test_permission".to_string(),
-                            resource: "test_resource".to_string(),
-                            action: PermissionAction::Read,
-                        },
-                    ],
-                },
-            ],
+            roles: vec![{
+                let mut role = Role::new(RoleType::Admin, "Admin".to_string());
+                role.permissions = vec![Permission {
+                    id: Uuid::new_v4(),
+                    name: "Create User".to_string(),
+                    action: PermissionAction::Create,
+                    resource: "users".to_string(),
+                }];
+                role
+            }],
             active: true,
             last_login: None,
             created_at: OffsetDateTime::now_utc(),
             updated_at: OffsetDateTime::now_utc(),
-        }
+            mfa_enabled: false,
+            mfa_secret: None,
+        };
+
+        // Test permission exists
+        let has_permission = rbac
+            .check_permission(&user, PermissionAction::Create, "users")
+            .await
+            .unwrap();
+        assert!(has_permission);
+
+        // Test permission does not exist
+        let has_permission = rbac
+            .check_permission(&user, PermissionAction::Delete, "users")
+            .await
+            .unwrap();
+        assert!(!has_permission);
+
+        // Test cache hit
+        let has_permission = rbac
+            .check_permission(&user, PermissionAction::Create, "users")
+            .await
+            .unwrap();
+        assert!(has_permission);
+
+        // Test cache clear
+        rbac.clear_user_cache(user.id);
+        let has_permission = rbac
+            .check_permission(&user, PermissionAction::Create, "users")
+            .await
+            .unwrap();
+        assert!(has_permission);
     }
 
     #[test]
-    fn test_permission_check() {
-        let rbac = RbacService::new();
-        let user = create_test_user();
+    fn test_has_permission() {
+        let user = User {
+            id: UserId(Uuid::new_v4()),
+            tenant_id: TenantId(Uuid::new_v4()),
+            email: "test@example.com".to_string(),
+            password_hash: "hash".to_string(),
+            roles: vec![{
+                let mut role = Role::new(RoleType::Admin, "Admin".to_string());
+                role.permissions = vec![Permission::new(
+                    "Create User".to_string(),
+                    PermissionAction::Create,
+                    "users".to_string(),
+                )];
+                role
+            }],
+            last_login: None,
+            created_at: OffsetDateTime::now_utc(),
+            updated_at: OffsetDateTime::now_utc(),
+            active: true,
+            mfa_enabled: false,
+            mfa_secret: None,
+        };
 
-        // Test permission that user has
-        let check = PermissionCheck::new("test_resource", PermissionAction::Read);
-        assert!(rbac.has_permission(&user, &check));
-
-        // Test permission that user doesn't have
-        let check = PermissionCheck::new("test_resource", PermissionAction::Write);
-        assert!(!rbac.has_permission(&user, &check));
+        let has_permission = has_permission(&user, PermissionAction::Create, "users");
+        assert!(has_permission);
     }
 
     #[test]
-    fn test_admin_permission() {
-        let rbac = RbacService::new();
-        let mut user = create_test_user();
-
-        // Add admin permission
-        user.roles[0].permissions.push(Permission {
-            id: uuid::Uuid::new_v4(),
-            name: "admin_permission".to_string(),
-            resource: "test_resource".to_string(),
-            action: PermissionAction::Admin,
-        });
-
-        // Admin should have all permissions for the resource
-        let checks = [
-            PermissionCheck::new("test_resource", PermissionAction::Read),
-            PermissionCheck::new("test_resource", PermissionAction::Write),
-            PermissionCheck::new("test_resource", PermissionAction::Delete),
-        ];
-
-        assert!(rbac.has_all_permissions(&user, &checks));
+    fn test_create_user_role() {
+        let role = create_user_role();
+        assert_eq!(role.role_type, RoleType::User);
+        assert_eq!(role.name, "User");
+        assert!(role.permissions.is_empty());
     }
 
     #[test]
-    fn test_permission_caching() {
-        let rbac = RbacService::new();
-        let tenant_id = TenantId::new();
-        let mut permissions = HashSet::new();
-        
-        permissions.insert(PermissionCheck::new("test_resource", PermissionAction::Read));
-        permissions.insert(PermissionCheck::new("test_resource", PermissionAction::Write));
+    fn test_create_admin_role() {
+        let role = create_admin_role();
+        assert_eq!(role.role_type, RoleType::Admin);
+        assert_eq!(role.name, "Admin");
+        assert_eq!(role.permissions.len(), 4);
+    }
 
-        // Cache permissions
-        rbac.cache_tenant_permissions(tenant_id, permissions.clone());
-
-        // Verify cached permissions
-        let cached = rbac.get_cached_tenant_permissions(tenant_id).unwrap();
-        assert_eq!(cached, permissions);
+    #[test]
+    fn test_create_super_admin_role() {
+        let role = create_super_admin_role();
+        assert_eq!(role.role_type, RoleType::SuperAdmin);
+        assert_eq!(role.name, "Super Admin");
+        assert_eq!(role.permissions.len(), 4);
     }
 }

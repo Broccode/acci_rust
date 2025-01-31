@@ -10,6 +10,10 @@ YEARS OF EXPERIENCE: 7+ years in production Rust development
 
 ### ALWAYS ADHERE TO CLIPPY CONFIGURATION IN .clippy.toml AND RUSTFMT CONFIGURATION IN .rustfmt.toml
 
+### For new crates in Cargo.toml with feature flags, always check first if the feature flag really exists for the given version of the crate
+
+### Update memory bank and start a new task when your context is more than 80% full
+
 ### MEMORY MANAGEMENT
 
 - Never use unsafe blocks unless absolutely necessary and thoroughly documented

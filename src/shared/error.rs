@@ -1,83 +1,157 @@
 use axum::{
-    response::{IntoResponse, Response},
     http::StatusCode,
-    Json,
+    response::{IntoResponse, Response},
 };
-use serde_json::json;
 use thiserror::Error;
-use uuid::Uuid;
 
-/// Common error types for the ACCI Framework
+/// Result type for the application
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// Error type for the application
 #[derive(Debug, Error)]
 pub enum Error {
+    /// Database error
     #[error("Database error: {0}")]
-    Database(#[from] sqlx::Error),
+    Database(String),
 
-    #[error("Authentication failed: {0}")]
+    /// Authentication error
+    #[error("Authentication error: {0}")]
     Authentication(String),
 
-    #[error("Authorization failed: {0}")]
+    /// Authorization error
+    #[error("Authorization error: {0}")]
     Authorization(String),
 
-    #[error("Validation failed: {0}")]
-    Validation(String),
-
-    #[error("Tenant error: {0}")]
-    Tenant(String),
-
+    /// Not found error
     #[error("Not found: {0}")]
     NotFound(String),
 
+    /// Invalid input error
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),
-}
 
-impl Error {
-    /// Returns the appropriate HTTP status code for this error
-    fn status_code(&self) -> StatusCode {
-        match self {
-            Error::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Error::Authentication(_) => StatusCode::UNAUTHORIZED,
-            Error::Authorization(_) => StatusCode::FORBIDDEN,
-            Error::Validation(_) => StatusCode::BAD_REQUEST,
-            Error::Tenant(_) => StatusCode::BAD_REQUEST,
-            Error::NotFound(_) => StatusCode::NOT_FOUND,
-            Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
+    /// Validation error
+    #[error("Validation error: {0}")]
+    Validation(String),
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        let status = self.status_code();
-        let body = Json(json!({
-            "error": {
-                "message": self.to_string(),
-                "code": status.as_u16(),
-                "correlation_id": Uuid::new_v4(),
-            }
-        }));
+        let (status, message) = match self {
+            Error::Database(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            Error::Authentication(msg) => (StatusCode::UNAUTHORIZED, msg),
+            Error::Authorization(msg) => (StatusCode::FORBIDDEN, msg),
+            Error::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
+            Error::InvalidInput(msg) => (StatusCode::BAD_REQUEST, msg),
+            Error::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            Error::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
+        };
 
-        (status, body).into_response()
+        (status, message).into_response()
     }
 }
 
-/// Result type alias using our Error type
-pub type Result<T> = std::result::Result<T, Error>;
+impl From<sqlx::Error> for Error {
+    fn from(err: sqlx::Error) -> Self {
+        match err {
+            sqlx::Error::RowNotFound => Self::NotFound("Record not found".to_string()),
+            _ => Self::Database(err.to_string()),
+        }
+    }
+}
+
+impl From<redis::RedisError> for Error {
+    fn from(err: redis::RedisError) -> Self {
+        Self::Database(format!("Redis error: {}", err))
+    }
+}
+
+impl From<jsonwebtoken::errors::Error> for Error {
+    fn from(err: jsonwebtoken::errors::Error) -> Self {
+        Self::Authentication(format!("JWT error: {}", err))
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_error_status_codes() {
-        assert_eq!(
-            Error::Authentication("test".into()).status_code(),
-            StatusCode::UNAUTHORIZED
+    fn test_error_conversion() {
+        let db_error = sqlx::Error::RowNotFound;
+        let error: Error = db_error.into();
+        assert!(matches!(error, Error::NotFound(_)));
+
+        let redis_error = redis::RedisError::from(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "test error",
+        ));
+        let error: Error = redis_error.into();
+        assert!(matches!(error, Error::Database(_)));
+
+        let jwt_error = jsonwebtoken::errors::Error::from(
+            jsonwebtoken::errors::ErrorKind::InvalidToken,
         );
-        assert_eq!(
-            Error::NotFound("test".into()).status_code(),
-            StatusCode::NOT_FOUND
-        );
+        let error: Error = jwt_error.into();
+        assert!(matches!(error, Error::Authentication(_)));
+    }
+
+    #[test]
+    fn test_error_display() {
+        let error = Error::Database("test error".to_string());
+        assert_eq!(error.to_string(), "Database error: test error");
+
+        let error = Error::Authentication("test error".to_string());
+        assert_eq!(error.to_string(), "Authentication error: test error");
+
+        let error = Error::Authorization("test error".to_string());
+        assert_eq!(error.to_string(), "Authorization error: test error");
+
+        let error = Error::NotFound("test error".to_string());
+        assert_eq!(error.to_string(), "Not found: test error");
+
+        let error = Error::InvalidInput("test error".to_string());
+        assert_eq!(error.to_string(), "Invalid input: test error");
+
+        let error = Error::Internal("test error".to_string());
+        assert_eq!(error.to_string(), "Internal error: test error");
+
+        let error = Error::Validation("test error".to_string());
+        assert_eq!(error.to_string(), "Validation error: test error");
+    }
+
+    #[test]
+    fn test_error_response() {
+        let error = Error::NotFound("test error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let error = Error::Authentication("test error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let error = Error::Authorization("test error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let error = Error::InvalidInput("test error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let error = Error::Internal("test error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let error = Error::Database("test error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let error = Error::Validation("test error".to_string());
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }

@@ -3,7 +3,7 @@ use axum::{
     Router,
     routing::get,
     response::IntoResponse,
-    http::StatusCode,
+    http::{StatusCode, Method, HeaderName, HeaderValue},
 };
 use tower_http::cors::CorsLayer;
 use tracing::info;
@@ -26,13 +26,33 @@ impl Server {
 
     /// Creates the router with all routes
     pub fn create_router(&self) -> Router {
+        // Convert allowed methods to Method enum
+        let methods = [
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+        ];
+
+        // Convert allowed headers to HeaderName
+        let headers = [
+            HeaderName::from_static("authorization"),
+            HeaderName::from_static("content-type"),
+        ];
+
+        // Convert allowed origins to HeaderValue
+        let origins: Vec<HeaderValue> = self.config.cors_allowed_origins
+            .iter()
+            .filter_map(|origin| HeaderValue::from_str(origin).ok())
+            .collect();
+
         Router::new()
             .route("/health", get(health_check))
             .layer(
                 CorsLayer::new()
-                    .allow_origin(self.config.server.cors_allowed_origins.clone())
-                    .allow_methods(vec!["GET", "POST", "PUT", "DELETE"])
-                    .allow_headers(vec!["Authorization", "Content-Type"])
+                    .allow_origin(origins)
+                    .allow_methods(methods)
+                    .allow_headers(headers)
             )
     }
 
@@ -40,11 +60,13 @@ impl Server {
     pub async fn run(&self) -> crate::shared::error::Result<()> {
         let app = self.create_router();
 
-        let addr = SocketAddr::from(([127, 0, 0, 1], self.config.server.port));
+        let addr = SocketAddr::from(([127, 0, 0, 1], self.config.port));
         info!("Server listening on {}", addr);
 
-        axum::Server::bind(&addr)
-            .serve(app.into_make_service())
+        let listener = tokio::net::TcpListener::bind(&addr).await
+            .map_err(|e| crate::shared::error::Error::Internal(format!("Failed to bind server: {}", e)))?;
+
+        axum::serve(listener, app)
             .await
             .map_err(|e| crate::shared::error::Error::Internal(format!("Server error: {}", e)))?;
 
@@ -66,7 +88,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_check() {
-        let config = ServerConfig::default_dev();
+        let config = ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 3000,
+            cors_allowed_origins: vec!["http://localhost:3000".to_string()],
+        };
+
         let server = Server::new(&config).await.unwrap();
         let app = server.create_router();
 
@@ -85,7 +112,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_cors() {
-        let config = ServerConfig::default_dev();
+        let config = ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 3000,
+            cors_allowed_origins: vec!["http://localhost:3000".to_string()],
+        };
+
         let server = Server::new(&config).await.unwrap();
         let app = server.create_router();
 

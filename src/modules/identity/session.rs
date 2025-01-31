@@ -1,5 +1,6 @@
+use redis::{aio::Connection, AsyncCommands, Client};
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::shared::{
@@ -7,7 +8,48 @@ use crate::shared::{
     types::{TenantId, UserId},
 };
 
-/// Represents a user session
+/// JWT configuration
+#[derive(Debug, Clone)]
+pub struct JwtConfig {
+    pub secret: String,
+    pub issuer: String,
+    pub audience: String,
+    pub expiration: Duration,
+}
+
+/// JWT claims
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: String,
+    pub exp: i64,
+    pub iat: i64,
+    pub iss: String,
+    pub aud: String,
+    pub tenant_id: String,
+}
+
+impl Claims {
+    /// Creates new JWT claims
+    pub fn new(
+        user_id: UserId,
+        tenant_id: TenantId,
+        issuer: String,
+        audience: String,
+        expiration: Duration,
+    ) -> Self {
+        let now = OffsetDateTime::now_utc();
+        Self {
+            sub: user_id.0.to_string(),
+            exp: (now + expiration).unix_timestamp(),
+            iat: now.unix_timestamp(),
+            iss: issuer,
+            aud: audience,
+            tenant_id: tenant_id.0.to_string(),
+        }
+    }
+}
+
+/// Session data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
@@ -20,7 +62,7 @@ pub struct Session {
 
 impl Session {
     /// Creates a new session
-    pub fn new(user_id: UserId, tenant_id: TenantId, token: String, expires_in: time::Duration) -> Self {
+    pub fn new(user_id: UserId, tenant_id: TenantId, token: String, expires_in: Duration) -> Self {
         let now = OffsetDateTime::now_utc();
         Self {
             id: Uuid::new_v4(),
@@ -34,69 +76,20 @@ impl Session {
 
     /// Checks if the session is expired
     pub fn is_expired(&self) -> bool {
-        OffsetDateTime::now_utc() > self.expires_at
+        self.expires_at <= OffsetDateTime::now_utc()
     }
 }
 
-/// Configuration for JWT tokens
-#[derive(Debug, Clone)]
-pub struct JwtConfig {
-    pub secret: String,
-    pub issuer: String,
-    pub audience: String,
-    pub expiration: time::Duration,
-}
-
-/// Claims for JWT tokens
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Claims {
-    /// Issuer
-    pub iss: String,
-    /// Subject (User ID)
-    pub sub: String,
-    /// Audience
-    pub aud: String,
-    /// Expiration time (as UTC timestamp)
-    pub exp: i64,
-    /// Issued at (as UTC timestamp)
-    pub iat: i64,
-    /// JWT ID
-    pub jti: String,
-    /// Tenant ID
-    pub tid: String,
-}
-
-impl Claims {
-    /// Creates new claims for a user
-    pub fn new(
-        user_id: UserId,
-        tenant_id: TenantId,
-        config: &JwtConfig,
-        session_id: Uuid,
-    ) -> Self {
-        let now = OffsetDateTime::now_utc();
-        Self {
-            iss: config.issuer.clone(),
-            sub: user_id.0.to_string(),
-            aud: config.audience.clone(),
-            exp: (now + config.expiration).unix_timestamp(),
-            iat: now.unix_timestamp(),
-            jti: session_id.to_string(),
-            tid: tenant_id.0.to_string(),
-        }
-    }
-}
-
-/// Session store for managing user sessions
+/// Session store trait
 #[async_trait::async_trait]
-pub trait SessionStore: Send + Sync + 'static {
+pub trait SessionStore: Send + Sync + std::fmt::Debug + 'static {
     /// Stores a session
     async fn store_session(&self, session: &Session) -> Result<()>;
 
-    /// Retrieves a session by ID
+    /// Gets a session by ID
     async fn get_session(&self, session_id: Uuid) -> Result<Option<Session>>;
 
-    /// Retrieves a session by token
+    /// Gets a session by token
     async fn get_session_by_token(&self, token: &str) -> Result<Option<Session>>;
 
     /// Removes a session
@@ -106,40 +99,26 @@ pub trait SessionStore: Send + Sync + 'static {
     async fn remove_user_sessions(&self, user_id: UserId) -> Result<()>;
 }
 
-/// Redis implementation of SessionStore
+/// Redis session store
+#[derive(Debug)]
 pub struct RedisSessionStore {
-    client: redis::Client,
+    client: Client,
 }
 
 impl RedisSessionStore {
     /// Creates a new RedisSessionStore
     pub fn new(redis_url: &str) -> Result<Self> {
-        let client = redis::Client::open(redis_url)
-            .map_err(|e| Error::Internal(format!("Failed to connect to Redis: {}", e)))?;
+        let client = Client::open(redis_url)
+            .map_err(|e| Error::Database(format!("Failed to connect to Redis: {}", e)))?;
         Ok(Self { client })
     }
 
-    /// Gets a Redis connection from the pool
-    async fn get_connection(&self) -> Result<redis::aio::Connection> {
+    /// Gets a Redis connection
+    async fn get_connection(&self) -> Result<Connection> {
         self.client
             .get_async_connection()
             .await
-            .map_err(|e| Error::Internal(format!("Failed to get Redis connection: {}", e)))
-    }
-
-    /// Generates a session key for Redis
-    fn session_key(session_id: Uuid) -> String {
-        format!("session:{}", session_id)
-    }
-
-    /// Generates a token key for Redis
-    fn token_key(token: &str) -> String {
-        format!("token:{}", token)
-    }
-
-    /// Generates a user sessions key for Redis
-    fn user_sessions_key(user_id: UserId) -> String {
-        format!("user:{}:sessions", user_id.0)
+            .map_err(|e| Error::Database(format!("Failed to get Redis connection: {}", e)))
     }
 }
 
@@ -147,99 +126,86 @@ impl RedisSessionStore {
 impl SessionStore for RedisSessionStore {
     async fn store_session(&self, session: &Session) -> Result<()> {
         let mut conn = self.get_connection().await?;
-        let session_key = Self::session_key(session.id);
-        let token_key = Self::token_key(&session.token);
-        let user_sessions_key = Self::user_sessions_key(session.user_id);
+        let key = format!("session:{}", session.id);
+        let token_key = format!("token:{}", session.token);
+        let user_key = format!("user:{}:sessions", session.user_id.0);
 
         // Store session data
-        let session_json = serde_json::to_string(session)
+        let session_data = serde_json::to_string(session)
             .map_err(|e| Error::Internal(format!("Failed to serialize session: {}", e)))?;
 
-        let expiry_seconds = (session.expires_at - OffsetDateTime::now_utc())
-            .whole_seconds()
-            .max(0) as u64;
-
-        // Use a Redis transaction to ensure atomicity
+        // Set session data with expiration
+        let ttl = (session.expires_at - OffsetDateTime::now_utc()).whole_seconds();
         redis::pipe()
             .atomic()
-            // Store session data with expiration
-            .set_ex(
-                &session_key,
-                &session_json,
-                expiry_seconds,
-            )
-            // Store token to session ID mapping
-            .set_ex(
-                &token_key,
-                session.id.to_string(),
-                expiry_seconds,
-            )
-            // Add session ID to user's sessions set
-            .sadd(&user_sessions_key, session.id.to_string())
+            .set(&key, &session_data)
+            .expire(&key, ttl)
+            .set(&token_key, session.id.to_string())
+            .expire(&token_key, ttl)
+            .sadd(&user_key, session.id.to_string())
             .query_async(&mut conn)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to store session: {}", e)))?;
+            .map_err(|e| Error::Database(format!("Failed to store session: {}", e)))?;
 
         Ok(())
     }
 
     async fn get_session(&self, session_id: Uuid) -> Result<Option<Session>> {
         let mut conn = self.get_connection().await?;
-        let session_key = Self::session_key(session_id);
+        let key = format!("session:{}", session_id);
 
-        let session_data: Option<String> = redis::cmd("GET")
-            .arg(&session_key)
-            .query_async(&mut conn)
+        let data: Option<String> = conn
+            .get(&key)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to get session: {}", e)))?;
+            .map_err(|e| Error::Database(format!("Failed to get session: {}", e)))?;
 
-        match session_data {
+        match data {
             Some(data) => {
-                let session: Session = serde_json::from_str(&data)
-                    .map_err(|e| Error::Internal(format!("Failed to deserialize session: {}", e)))?;
+                let session: Session = serde_json::from_str(&data).map_err(|e| {
+                    Error::Internal(format!("Failed to deserialize session: {}", e))
+                })?;
                 Ok(Some(session))
-            }
+            },
             None => Ok(None),
         }
     }
 
     async fn get_session_by_token(&self, token: &str) -> Result<Option<Session>> {
         let mut conn = self.get_connection().await?;
-        let token_key = Self::token_key(token);
+        let token_key = format!("token:{}", token);
 
-        let session_id: Option<String> = redis::cmd("GET")
-            .arg(&token_key)
-            .query_async(&mut conn)
+        let session_id: Option<String> = conn
+            .get(&token_key)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to get session ID: {}", e)))?;
+            .map_err(|e| Error::Database(format!("Failed to get session ID: {}", e)))?;
 
         match session_id {
             Some(id) => {
                 let session_id = Uuid::parse_str(&id)
                     .map_err(|e| Error::Internal(format!("Invalid session ID: {}", e)))?;
                 self.get_session(session_id).await
-            }
+            },
             None => Ok(None),
         }
     }
 
     async fn remove_session(&self, session_id: Uuid) -> Result<()> {
         let mut conn = self.get_connection().await?;
-        
-        // Get session first to get the token
+        let key = format!("session:{}", session_id);
+
+        // Get session data to remove token and user references
         if let Some(session) = self.get_session(session_id).await? {
-            let session_key = Self::session_key(session_id);
-            let token_key = Self::token_key(&session.token);
-            let user_sessions_key = Self::user_sessions_key(session.user_id);
+            let token_key = format!("token:{}", session.token);
+            let user_key = format!("user:{}:sessions", session.user_id.0);
 
             redis::pipe()
                 .atomic()
-                .del(&session_key)
+                .del(&key)
                 .del(&token_key)
-                .srem(&user_sessions_key, session_id.to_string())
+                .srem(&user_key, session_id.to_string())
                 .query_async(&mut conn)
                 .await
-                .map_err(|e| Error::Internal(format!("Failed to remove session: {}", e)))?;
+                .map_err(|e| Error::Database(format!("Failed to remove session: {}", e)))?;
         }
 
         Ok(())
@@ -247,28 +213,20 @@ impl SessionStore for RedisSessionStore {
 
     async fn remove_user_sessions(&self, user_id: UserId) -> Result<()> {
         let mut conn = self.get_connection().await?;
-        let user_sessions_key = Self::user_sessions_key(user_id);
+        let user_key = format!("user:{}:sessions", user_id.0);
 
-        // Get all session IDs for the user
-        let session_ids: Vec<String> = redis::cmd("SMEMBERS")
-            .arg(&user_sessions_key)
-            .query_async(&mut conn)
+        // Get all session IDs for user
+        let session_ids: Vec<String> = conn
+            .smembers(&user_key)
             .await
-            .map_err(|e| Error::Internal(format!("Failed to get user sessions: {}", e)))?;
+            .map_err(|e| Error::Database(format!("Failed to get user sessions: {}", e)))?;
 
         // Remove each session
-        for id_str in session_ids {
-            if let Ok(session_id) = Uuid::parse_str(&id_str) {
-                self.remove_session(session_id).await?;
-            }
+        for id in session_ids {
+            let session_id = Uuid::parse_str(&id)
+                .map_err(|e| Error::Internal(format!("Invalid session ID: {}", e)))?;
+            self.remove_session(session_id).await?;
         }
-
-        // Remove the user's sessions set
-        redis::cmd("DEL")
-            .arg(&user_sessions_key)
-            .query_async(&mut conn)
-            .await
-            .map_err(|e| Error::Internal(format!("Failed to remove user sessions set: {}", e)))?;
 
         Ok(())
     }
@@ -277,37 +235,89 @@ impl SessionStore for RedisSessionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use time::Duration;
+    use once_cell::sync::Lazy;
+    use std::sync::Arc;
+    use testcontainers::*;
+    use testcontainers_modules::redis::Redis;
 
-    #[test]
-    fn test_session_expiration() {
-        let user_id = UserId::new();
-        let tenant_id = TenantId::new();
-        let token = "test_token".to_string();
-        let expires_in = Duration::minutes(30);
+    static DOCKER: Lazy<Arc<clients::Cli>> = Lazy::new(|| Arc::new(clients::Cli::default()));
 
-        let session = Session::new(user_id, tenant_id, token, expires_in);
-        assert!(!session.is_expired());
+    async fn create_redis_store() -> (RedisSessionStore, Container<'static, Redis>) {
+        let redis_container = DOCKER.run(Redis::default());
+        let port = redis_container.get_host_port_ipv4(6379);
+        let redis_url = format!("redis://127.0.0.1:{}", port);
+
+        let store = RedisSessionStore::new(&redis_url).expect("Failed to create Redis store");
+        (store, redis_container)
+    }
+
+    #[tokio::test]
+    async fn test_session_store() {
+        let (store, _container) = create_redis_store().await;
+        let session = Session::new(
+            UserId::new(),
+            TenantId::new(),
+            "test_token".to_string(),
+            Duration::hours(1),
+        );
+
+        // Test storing session
+        store.store_session(&session).await.unwrap();
+
+        // Test retrieving session by ID
+        let retrieved = store.get_session(session.id).await.unwrap().unwrap();
+        assert_eq!(retrieved.id, session.id);
+        assert_eq!(retrieved.user_id, session.user_id);
+        assert_eq!(retrieved.token, session.token);
+
+        // Test retrieving session by token
+        let retrieved = store
+            .get_session_by_token(&session.token)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retrieved.id, session.id);
+        assert_eq!(retrieved.user_id, session.user_id);
+        assert_eq!(retrieved.token, session.token);
+
+        // Test removing session
+        store.remove_session(session.id).await.unwrap();
+        assert!(store.get_session(session.id).await.unwrap().is_none());
+
+        // Test user sessions
+        let session2 = Session::new(
+            session.user_id,
+            TenantId::new(),
+            "test_token_2".to_string(),
+            Duration::hours(1),
+        );
+        store.store_session(&session2).await.unwrap();
+
+        // Remove all user sessions
+        store.remove_user_sessions(session.user_id).await.unwrap();
+        assert!(store.get_session(session2.id).await.unwrap().is_none());
     }
 
     #[test]
     fn test_claims_creation() {
         let user_id = UserId::new();
         let tenant_id = TenantId::new();
-        let session_id = Uuid::new_v4();
+        let issuer = "test_issuer".to_string();
+        let audience = "test_audience".to_string();
+        let expiration = Duration::hours(1);
 
-        let config = JwtConfig {
-            secret: "test_secret".to_string(),
-            issuer: "test_issuer".to_string(),
-            audience: "test_audience".to_string(),
-            expiration: Duration::minutes(30),
-        };
+        let claims = Claims::new(
+            user_id,
+            tenant_id,
+            issuer.clone(),
+            audience.clone(),
+            expiration,
+        );
 
-        let claims = Claims::new(user_id, tenant_id, &config, session_id);
-        assert_eq!(claims.iss, config.issuer);
         assert_eq!(claims.sub, user_id.0.to_string());
-        assert_eq!(claims.aud, config.audience);
-        assert_eq!(claims.tid, tenant_id.0.to_string());
-        assert_eq!(claims.jti, session_id.to_string());
+        assert_eq!(claims.tenant_id, tenant_id.0.to_string());
+        assert_eq!(claims.iss, issuer);
+        assert_eq!(claims.aud, audience);
+        assert!(claims.exp > claims.iat);
     }
 }

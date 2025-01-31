@@ -14,3 +14,5 @@ config.prod.toml
 repomix-output.txt
 
 .idea
+
+.sqlx/
